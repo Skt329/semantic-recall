@@ -1,0 +1,13 @@
+src/
+tests/
+*.ts
+!*.d.ts
+tsconfig.json
+tsup.config.ts
+.github/
+.vscode/
+.env*
+*.test.*
+coverage/
+node_modules/
+semantic_memory_build_prompt.md
