@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Local Embedder Adapter
+ * semantic-recall — Local Embedder Adapter
  *
  * Uses @huggingface/transformers (Transformers.js v3) with the
  * all-MiniLM-L6-v2 model (384 dimensions, ~25MB).
@@ -49,7 +49,7 @@ export function createLocalEmbedder(modelName?: string): EmbedderFunction {
 
   if (!hasShownDownloadMessage) {
     console.info(
-      '[semantic-memory] Using local embedding model. ' +
+      '[semantic-recall] Using local embedding model. ' +
       'First run downloads ~25MB model — this only happens once.'
     );
     hasShownDownloadMessage = true;

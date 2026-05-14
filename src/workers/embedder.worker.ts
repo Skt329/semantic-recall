@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Embedder Worker Thread
+ * semantic-recall — Embedder Worker Thread
  *
  * Runs in a Node.js worker_threads context, isolated from the main thread.
  * Loads the Transformers.js embedding model and converts text to vectors.

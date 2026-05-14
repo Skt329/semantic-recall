@@ -1,109 +1,120 @@
-# semantic-memory
-
-> Drop-in persistent semantic memory for LLM apps.  
-> Zero config. Zero API keys. Two methods: `remember()` and `recall()`.
-
-[![npm version](https://img.shields.io/npm/v/semantic-memory)](https://www.npmjs.com/package/semantic-memory)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org)
+<p align="center">
+  <br />
+  <h1 align="center">🧠 semantic-recall</h1>
+  <p align="center">
+    <strong>Give your AI a brain that remembers.</strong>
+    <br />
+    Persistent semantic memory for LLM apps — zero config, zero API keys, two methods.
+  </p>
+  <p align="center">
+    <a href="https://www.npmjs.com/package/semantic-recall"><img src="https://img.shields.io/npm/v/semantic-recall?style=flat-square&color=cb3837" alt="npm version" /></a>
+    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" /></a>
+    <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen?style=flat-square" alt="Node.js" /></a>
+    <a href="https://github.com/skt329/semantic-recall"><img src="https://img.shields.io/github/stars/skt329/semantic-recall?style=flat-square" alt="Stars" /></a>
+  </p>
+</p>
 
 ---
 
-## Why?
-
-Every LLM chatbot forgets everything between sessions. Users repeat themselves. Context is lost. `semantic-memory` fixes this with **two lines of code** — no vector database, no API keys, no infrastructure.
+Every LLM chatbot forgets everything between sessions. Users repeat themselves. Context is lost. `semantic-recall` fixes this — **in two lines of code**.
 
 ```typescript
-import { Memory } from 'semantic-memory'
+import { Memory } from 'semantic-recall'
 
 const memory = new Memory({ userId: 'user_123' })
 
-// Store facts (fire-and-forget, never throws)
 memory.remember("User is vegetarian and allergic to nuts")
 
-// Retrieve relevant memories for your LLM prompt
 const facts = await memory.recall("What should I recommend for dinner?")
 // → ["User is vegetarian and allergic to nuts"]
 ```
 
-## Features
+No vector database. No API keys. No Docker containers. Just `npm install` and go.
 
-- **Zero Config** — Works out of the box with SQLite + local embeddings
-- **Zero API Keys** — Uses [Transformers.js](https://huggingface.co/docs/transformers.js) for on-device embeddings
-- **Persistent** — Memories survive restarts via SQLite (WAL mode)
-- **Semantic Search** — Finds relevant memories by meaning, not keywords
-- **Automatic Dedup** — Won't store "likes coffee" twice (cosine similarity check)
-- **Fire-and-Forget** — `remember()` returns instantly, processes in background
-- **Crash-Safe** — Persistent queue with retry + exponential backoff
-- **Multi-Tenant** — Built-in `userId` and `namespace` isolation
-- **TTL Support** — Auto-expire memories: `remember("in Paris", { ttl: "7d" })`
-- **Observable** — EventEmitter with typed events for monitoring
-- **Extensible** — Swap storage (SQLite/Turso/Supabase) or embedder (local/OpenAI/custom)
-- **Dual Build** — Ships ESM + CJS with full TypeScript declarations
+---
+
+## Why semantic-recall?
+
+Most memory solutions require you to set up infrastructure, manage API keys, or lock into a paid platform. `semantic-recall` is different:
+
+| | semantic-recall | [Mem0](https://github.com/mem0ai/mem0) | [Zep](https://github.com/getzep/zep) | LangChain Memory |
+|---|:---:|:---:|:---:|:---:|
+| **npm install & go** | ✅ | ❌ Requires API key or self-host setup | ❌ Requires server (Docker) | ✅ |
+| **Works offline** | ✅ Local embeddings | ❌ Cloud API calls | ❌ Server required | ❌ No built-in embeddings |
+| **Persistent across sessions** | ✅ SQLite on disk | ✅ Cloud-managed | ✅ Server-managed | ❌ In-memory by default |
+| **Semantic search** | ✅ Cosine similarity | ✅ | ✅ Knowledge graph | ❌ Keyword/buffer only |
+| **Auto deduplication** | ✅ Configurable threshold | ✅ | ❌ | ❌ |
+| **Crash recovery** | ✅ Persistent queue | ❌ | ❌ | ❌ |
+| **Worker thread isolation** | ✅ CPU never blocks | ❌ | N/A (separate server) | ❌ |
+| **TTL / auto-expiry** | ✅ `"7d"`, `"1h"` | ❌ | ❌ | ❌ |
+| **Multi-tenant** | ✅ userId + namespace | ✅ user/session/agent | ✅ Sessions | ❌ |
+| **Bundle size** | ~67 KB | Cloud SDK | Cloud SDK | Large framework |
+| **Free & open-source** | ✅ MIT, forever | Freemium (paid tiers) | Freemium (credit-based) | ✅ MIT |
+| **Self-contained** | ✅ Single package | ❌ Platform dependency | ❌ Server + Redis + Postgres | ❌ Framework dependency |
+
+> **TL;DR** — semantic-recall is the only solution that gives you persistent, semantic, crash-safe memory with zero infrastructure and zero API keys out of the box.
+
+---
 
 ## Installation
 
 ```bash
-npm install semantic-memory
+npm install semantic-recall
 ```
 
-> **Note:** The first call to `remember()` or `recall()` will download the embedding model (~80 MB) to a local cache. Subsequent calls are instant.
+> **First-run note:** The initial call downloads a ~25 MB embedding model to a local cache. After that, everything runs offline with zero network calls.
+
+---
 
 ## Quick Start
 
-### Basic Usage
+### The Basics — `remember()` and `recall()`
 
 ```typescript
-import { Memory } from 'semantic-memory'
+import { Memory } from 'semantic-recall'
 
 const memory = new Memory({ userId: 'user_123' })
 
-// Store memories
+// Store memories (fire-and-forget — returns instantly, never throws)
 memory.remember("User prefers dark mode")
 memory.remember("User is a senior TypeScript developer")
 memory.remember("User lives in San Francisco")
 
-// Later — retrieve relevant context for your LLM
+// Retrieve relevant context for your LLM prompt
 const context = await memory.recall("What IDE theme should I suggest?")
 // → ["User prefers dark mode"]
 
-// Inject into your LLM prompt
+// Inject into your system prompt
 const systemPrompt = `You are a helpful assistant.
 Known facts about the user:
-${context.map(f => `- ${f}`).join('\n')}
-`
+${context.map(f => `- ${f}`).join('\n')}`
 ```
 
-### With Confirmation
+### Synchronous Confirmation
 
 ```typescript
-// Wait for the memory to be stored (or confirmed as duplicate)
 const result = await memory.rememberAndWait("User is vegetarian")
-console.log(result)
-// → { saved: true, duplicate: false }
+console.log(result) // → { saved: true, duplicate: false }
 
 const result2 = await memory.rememberAndWait("User is vegetarian")
-console.log(result2)
-// → { saved: false, duplicate: true }
+console.log(result2) // → { saved: false, duplicate: true }
 ```
 
-### Namespaces
+### Namespaces — Organize by Topic
 
 ```typescript
-const memory = new Memory({
-  userId: 'user_123',
-  namespace: 'health',
-})
+const memory = new Memory({ userId: 'user_123', namespace: 'health' })
 
 memory.remember("User is allergic to peanuts")
-memory.remember("User takes vitamin D daily")
 
-// Query across namespaces
+// Only searches the 'health' namespace
 const health = await memory.recall("allergies")
+
+// Cross-namespace query
 const work = await memory.recall("allergies", { namespace: 'work' }) // → []
 ```
 
-### TTL (Auto-Expiry)
+### TTL — Auto-Expiring Memories
 
 ```typescript
 // Memory expires after 7 days
@@ -130,127 +141,108 @@ await memory.extractAndRemember([
   { role: 'user', content: "Yeah, I'm starting a new job as a ML engineer at Google" },
 ])
 // Automatically extracts and stores:
-// - "User lives in Tokyo"
-// - "User previously lived in London"
-// - "User works as a ML engineer at Google"
+// → "User lives in Tokyo"
+// → "User previously lived in London"
+// → "User works as a ML engineer at Google"
 ```
 
-Supported LLM providers: `'openai'`, `'gemini'`, `'claude'`, or pass a custom function.
+Supported providers: `'openai'` · `'gemini'` · `'claude'` · or any custom `LLMFunction`.
 
-### Events
+---
+
+## How It Works
+
+```
+remember("user is vegetarian")
+         │
+         ▼
+  ┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
+  │   Enqueue    │────▶│  Embed Text  │────▶│  Dedup Check    │
+  │ (persistent  │     │ (worker      │     │ (cosine sim     │
+  │  queue)      │     │  thread)     │     │  ≥ 0.92?)       │
+  └─────────────┘     └──────────────┘     └────────┬────────┘
+                                                     │
+                                            ┌────────┴────────┐
+                                            │                 │
+                                       Unique            Duplicate
+                                            │                 │
+                                            ▼                 ▼
+                                     ┌────────────┐    ┌────────────┐
+                                     │   INSERT    │    │   Skip     │
+                                     │ + emit      │    │ (mark done)│
+                                     │ memory:saved│    │            │
+                                     └────────────┘    └────────────┘
+```
+
+### Reliability — Built Like Infrastructure
+
+Every call to `remember()` is **crash-safe**. Memories are first written to a persistent `pending_memories` queue, then processed asynchronously. If your process crashes mid-pipeline:
+
+```
+PENDING ──▶ PROCESSING ──▶ DONE
+                │
+                ▼
+             FAILED ──(exponential backoff)──▶ PENDING
+                │
+                ▼ (after max attempts)
+              DEAD ──(manual retry)──▶ PENDING
+```
+
+- **Stale recovery**: On startup, stuck `PROCESSING` jobs are automatically reset to `PENDING`
+- **Exponential backoff**: Failed jobs retry with 2^n second delays (2s → 4s → 8s)
+- **Dead letter queue**: After max attempts, jobs move to `DEAD` for manual inspection
+- **Never throws**: `remember()` swallows all errors — your app never crashes because of memory storage
+
+---
+
+## Observability
+
+Real-time events for monitoring and debugging:
 
 ```typescript
-memory.on('memory:saved', ({ content, memoryId }) => {
-  console.log(`✓ Saved: "${content}" (id: ${memoryId})`)
+memory.on('memory:saved', ({ content, jobId }) => {
+  console.log(`✓ Saved: "${content}" (id: ${jobId})`)
 })
 
 memory.on('memory:duplicate', ({ content }) => {
   console.log(`⊘ Duplicate skipped: "${content}"`)
 })
 
-memory.on('memory:error', ({ content, error }) => {
-  console.error(`✗ Failed: "${content}" — ${error}`)
+memory.on('memory:retry', ({ content, error, attempts }) => {
+  console.warn(`↻ Retry #${attempts}: "${content}" — ${error}`)
 })
 
-memory.on('memory:dead', ({ content, error, jobId }) => {
-  console.error(`☠ Dead after max retries: "${content}" — ${error}`)
-})
-```
-
-### Memory Management
-
-```typescript
-// List all stored memories
-const all = await memory.list()
-const recent = await memory.list({ limit: 10 })
-
-// Delete a specific memory
-await memory.forget(memoryId)
-
-// Delete all memories for this user/namespace
-await memory.forgetAll()
-
-// Detailed recall with similarity scores
-const detailed = await memory.recallDetailed("food preferences")
-// → [{ id: 1, content: "User is vegetarian", similarity: 0.94, createdAt: "..." }]
-```
-
-### Dead Job Recovery
-
-```typescript
-// Inspect jobs that failed after max retries
-const dead = await memory.getDeadJobs()
-
-// Retry a dead job
-await memory.retryDead(dead[0].id)
-
-// Cleanup old processed jobs
-await memory.cleanup({ olderThan: '7d' })
-```
-
-### Graceful Shutdown
-
-```typescript
-process.on('SIGTERM', () => {
-  memory.destroy() // Stops retry scheduler, closes DB
+memory.on('memory:dead', ({ content, error }) => {
+  console.error(`☠ Dead: "${content}" — ${error}`)
 })
 ```
 
-## Configuration
-
-```typescript
-const memory = new Memory({
-  // Required
-  userId: 'user_123',
-
-  // Storage
-  storage: 'sqlite',           // 'sqlite' (default) | StorageAdapter object
-  dbPath: './my-memories.db',   // SQLite file path (default: './semantic-memory.db')
-
-  // Embedder
-  embedder: 'local',           // 'local' (default) | 'openai' | EmbedderFunction
-  embeddingModel: 'Xenova/all-MiniLM-L6-v2', // HuggingFace model (local)
-  openaiApiKey: '...',         // Required if embedder: 'openai'
-
-  // Behavior
-  namespace: 'default',        // Namespace isolation
-  dedupThreshold: 0.92,        // Cosine similarity threshold for dedup (0-1)
-  recallThreshold: 0.70,       // Minimum similarity to return a result (0-1)
-  topK: 5,                     // Max results per recall()
-  maxAttempts: 3,               // Max retry attempts before marking dead
-  retryIntervalMs: 30_000,     // Retry scheduler interval
-
-  // LLM (for extractAndRemember)
-  llmProvider: 'openai',       // 'openai' | 'gemini' | 'claude' | LLMFunction
-  llmApiKey: '...',
-  llmModel: 'gpt-4o-mini',
-})
-```
+---
 
 ## Storage Adapters
 
-### SQLite (Default)
+### SQLite (Default) — Zero Config
 
-Zero-config, works everywhere with a filesystem:
+Works everywhere with a filesystem. WAL mode enabled for concurrent reads.
 
 ```typescript
 const memory = new Memory({
   userId: 'user_123',
-  dbPath: './memories.db',
+  dbPath: './my-memories.db', // default: './semantic-recall.db'
 })
 ```
 
-### Turso (Serverless)
+### Turso — Serverless Edge
 
-For serverless/edge deployments:
+For serverless and edge deployments with [Turso](https://turso.tech):
 
 ```bash
 npm install @libsql/client
 ```
 
 ```typescript
-import { Memory } from 'semantic-memory'
-import { createTursoAdapter } from 'semantic-memory/adapters/storage/turso'
+import { Memory } from 'semantic-recall'
+import { createTursoAdapter } from 'semantic-recall/adapters/storage/turso'
 
 const memory = new Memory({
   userId: 'user_123',
@@ -261,17 +253,17 @@ const memory = new Memory({
 })
 ```
 
-### Supabase (pgvector)
+### Supabase — Postgres Scale
 
-For Postgres-scale deployments:
+For production Postgres deployments with [Supabase](https://supabase.com):
 
 ```bash
 npm install @supabase/supabase-js
 ```
 
 ```typescript
-import { Memory } from 'semantic-memory'
-import { createSupabaseAdapter } from 'semantic-memory/adapters/storage/supabase'
+import { Memory } from 'semantic-recall'
+import { createSupabaseAdapter } from 'semantic-recall/adapters/storage/supabase'
 
 const memory = new Memory({
   userId: 'user_123',
@@ -288,32 +280,44 @@ const memory = new Memory({
 Implement the `StorageAdapter` interface for any backend:
 
 ```typescript
-import { Memory, type StorageAdapter } from 'semantic-memory'
+import { Memory, type StorageAdapter } from 'semantic-recall'
 
 const myAdapter: StorageAdapter = {
   async init() { /* create tables */ },
-  async insertMemory(params) { /* ... */ },
-  async searchMemories(params) { /* ... */ },
-  // ... see StorageAdapter interface for all required methods
+  async insertMemory(params) { /* insert */ },
+  async searchMemories(params) { /* return all rows */ },
+  async deleteMemory(id) { /* delete by id */ },
+  async deleteAllMemories(userId, namespace) { /* bulk delete */ },
+  async listMemories(userId, namespace, limit) { /* list */ },
+  async pruneExpired(userId) { /* remove expired */ },
+  async enqueue(job) { /* queue job, return id */ },
+  async markProcessing(jobId) { /* update status */ },
+  async markDone(jobId) { /* update status */ },
+  async markFailed(jobId, error) { /* update status + backoff */ },
+  async getRetryable() { /* return pending/failed jobs */ },
+  async getDeadJobs(userId) { /* return dead jobs */ },
+  async resetStaleProcessing() { /* crash recovery */ },
+  async cleanupDoneJobs(olderThanMs) { /* prune */ },
+  async retryDeadJob(jobId) { /* reset dead → pending */ },
+  close() { /* cleanup */ },
 }
 
-const memory = new Memory({
-  userId: 'user_123',
-  storage: myAdapter,
-})
+const memory = new Memory({ userId: 'user_123', storage: myAdapter })
 ```
+
+---
 
 ## Embedder Adapters
 
-### Local (Default)
+### Local (Default) — No API Keys
 
-Uses Transformers.js in a worker thread — no API keys needed:
+Uses [Transformers.js](https://huggingface.co/docs/transformers.js) in an isolated worker thread. The main thread is never blocked.
 
 ```typescript
 const memory = new Memory({
   userId: 'user_123',
   embedder: 'local',
-  embeddingModel: 'Xenova/all-MiniLM-L6-v2', // 384 dimensions
+  embeddingModel: 'Xenova/all-MiniLM-L6-v2', // 384 dims, ~25 MB
 })
 ```
 
@@ -324,122 +328,222 @@ const memory = new Memory({
   userId: 'user_123',
   embedder: 'openai',
   openaiApiKey: process.env.OPENAI_API_KEY,
-  embeddingModel: 'text-embedding-3-small', // 1536 dimensions
+  embeddingModel: 'text-embedding-3-small',
 })
 ```
 
-### Custom
-
-Bring your own embedding function:
+### Custom Embedder
 
 ```typescript
 const memory = new Memory({
   userId: 'user_123',
   embedder: async (text: string): Promise<number[]> => {
-    const response = await fetch('https://my-api.com/embed', {
+    const res = await fetch('https://my-api.com/embed', {
       method: 'POST',
       body: JSON.stringify({ text }),
     })
-    return response.json()
+    return res.json()
   },
 })
 ```
 
-## Architecture
+---
 
-```
-remember("user is vegetarian")
-         │
-         ▼
-  ┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-  │   Enqueue    │────▶│  Embed Text  │────▶│  Dedup Check    │
-  │ (pending_    │     │ (worker      │     │ (cosine sim     │
-  │  memories)   │     │  thread)     │     │  ≥ 0.92?)       │
-  └─────────────┘     └──────────────┘     └────────┬────────┘
-                                                     │
-                                            ┌────────┴────────┐
-                                            │                 │
-                                       Unique            Duplicate
-                                            │                 │
-                                            ▼                 ▼
-                                     ┌────────────┐    ┌────────────┐
-                                     │ INSERT into │    │ Mark job   │
-                                     │ memories    │    │ as 'done'  │
-                                     │ table       │    │ (skip)     │
-                                     └────────────┘    └────────────┘
+## Full Configuration
+
+```typescript
+const memory = new Memory({
+  // ─── Required ──────────────────────────────────
+  userId: 'user_123',
+
+  // ─── Storage ───────────────────────────────────
+  storage: 'sqlite',            // 'sqlite' | StorageAdapter
+  dbPath: './semantic-recall.db',
+
+  // ─── Embedder ──────────────────────────────────
+  embedder: 'local',            // 'local' | 'openai' | EmbedderFunction
+  embeddingModel: 'Xenova/all-MiniLM-L6-v2',
+  openaiApiKey: '...',          // Required if embedder: 'openai'
+
+  // ─── Behavior ──────────────────────────────────
+  namespace: 'default',
+  dedupThreshold: 0.92,         // Cosine sim threshold for dedup (0–1)
+  recallThreshold: 0.70,        // Min similarity to return (0–1)
+  topK: 5,                      // Max results per recall()
+
+  // ─── Reliability ───────────────────────────────
+  maxAttempts: 3,                // Retries before marking dead
+  retryIntervalMs: 30_000,      // Retry scheduler interval
+
+  // ─── LLM Auto-Extraction ──────────────────────
+  llmProvider: 'openai',        // 'openai' | 'gemini' | 'claude' | LLMFunction
+  llmApiKey: '...',
+  llmModel: 'gpt-4o-mini',
+})
 ```
 
-### Queue State Machine
-
-```
-PENDING ──▶ PROCESSING ──▶ DONE
-                │
-                ▼
-             FAILED ──(retry with backoff)──▶ PENDING
-                │
-                ▼ (after max attempts)
-              DEAD ──(manual retry)──▶ PENDING
-```
+---
 
 ## API Reference
 
-### `new Memory(options)`
+| Method | Returns | Description |
+|---|---|---|
+| `memory.remember(text, opts?)` | `void` | Store a memory. Fire-and-forget, never throws. |
+| `memory.rememberAndWait(text, opts?)` | `Promise<RememberResult>` | Store and wait. Returns `{ saved, duplicate }`. |
+| `memory.recall(query, opts?)` | `Promise<string[]>` | Semantic search. Returns content strings. |
+| `memory.recallDetailed(query, opts?)` | `Promise<MemoryResult[]>` | Like recall but with similarity scores + metadata. |
+| `memory.extractAndRemember(messages, opts?)` | `Promise<void>` | LLM-powered fact extraction from conversations. |
+| `memory.forget(memoryId)` | `Promise<void>` | Delete a specific memory. |
+| `memory.forgetAll(opts?)` | `Promise<void>` | Delete all memories for user+namespace. |
+| `memory.list(opts?)` | `Promise<MemoryResult[]>` | List all stored memories (no search). |
+| `memory.getDeadJobs()` | `Promise<MemoryJob[]>` | Inspect failed jobs. |
+| `memory.retryDead(jobId)` | `Promise<void>` | Retry a dead job. |
+| `memory.cleanup(opts?)` | `Promise<{ deleted }>` | Prune old done jobs from queue. |
+| `memory.destroy()` | `void` | Stop scheduler, close DB. |
 
-Creates a new Memory instance. See [Configuration](#configuration) for all options.
+### Events
 
-### `memory.remember(text, options?)`
+| Event | Payload | When |
+|---|---|---|
+| `memory:saved` | `{ jobId, content, replayed?, retried? }` | Memory stored successfully |
+| `memory:retry` | `{ jobId, content, error, attempts }` | Job failed, will retry |
+| `memory:dead` | `{ jobId, content, error, attempts }` | Job exhausted all retries |
 
-Store a memory. Fire-and-forget — returns immediately, never throws.
+### Types
 
-### `memory.rememberAndWait(text, options?)`
+All types are exported for TypeScript consumers:
 
-Store a memory and wait for confirmation. Returns `{ saved: boolean, duplicate: boolean }`.
+```typescript
+import type {
+  MemoryOptions,
+  RememberOptions,
+  RecallOptions,
+  MemoryResult,
+  RememberResult,
+  MemoryJob,
+  StorageAdapter,
+  EmbedderFunction,
+  ConversationMessage,
+  LLMFunction,
+  MemorySavedEvent,
+  MemoryRetryEvent,
+  MemoryDeadEvent,
+} from 'semantic-recall'
+```
 
-### `memory.recall(query, options?)`
+---
 
-Retrieve relevant memories as an array of strings. Options: `{ namespace?, threshold?, topK? }`.
+## Real-World Patterns
 
-### `memory.recallDetailed(query, options?)`
+### Inject Context Into Any LLM
 
-Like `recall()` but returns full `MemoryResult[]` with similarity scores.
+```typescript
+import OpenAI from 'openai'
+import { Memory } from 'semantic-recall'
 
-### `memory.extractAndRemember(messages, options?)`
+const memory = new Memory({ userId: 'user_123' })
+const openai = new OpenAI()
 
-Extract facts from a conversation using an LLM and store them.
+async function chat(userMessage: string) {
+  // Recall relevant memories
+  const context = await memory.recall(userMessage)
 
-### `memory.forget(memoryId)`
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      {
+        role: 'system',
+        content: `You are a helpful assistant.
+Known facts about the user:
+${context.map(f => `- ${f}`).join('\n')}`,
+      },
+      { role: 'user', content: userMessage },
+    ],
+  })
 
-Delete a specific memory by ID.
+  const reply = response.choices[0].message.content!
 
-### `memory.forgetAll(options?)`
+  // Auto-extract facts from this exchange
+  await memory.extractAndRemember([
+    { role: 'user', content: userMessage },
+    { role: 'assistant', content: reply },
+  ])
 
-Delete all memories for this user in a namespace.
+  return reply
+}
+```
 
-### `memory.list(options?)`
+### Graceful Shutdown
 
-List all stored memories (no semantic search).
+```typescript
+process.on('SIGTERM', () => {
+  memory.destroy() // Stops retry scheduler, closes DB
+  process.exit(0)
+})
+```
 
-### `memory.getDeadJobs()`
+### Dead Job Monitoring
 
-Return jobs that failed after max retries.
+```typescript
+// In a health check endpoint
+app.get('/health/memory', async (req, res) => {
+  const dead = await memory.getDeadJobs()
+  res.json({
+    status: dead.length === 0 ? 'healthy' : 'degraded',
+    deadJobs: dead.length,
+  })
+})
+```
 
-### `memory.retryDead(jobId)`
+---
 
-Retry a dead job.
+## Comparison Deep Dive
 
-### `memory.cleanup(options?)`
+### vs Mem0
 
-Prune old processed jobs from the queue.
+[Mem0](https://github.com/mem0ai/mem0) is a managed memory platform (cloud-hosted or self-hosted). It's a great product if you want a managed service — but it requires API keys for the cloud version and Docker + Redis for self-hosting. `semantic-recall` runs entirely locally with `npm install` and zero infrastructure.
 
-### `memory.destroy()`
+### vs Zep
 
-Stop retry scheduler and close database connection.
+[Zep](https://github.com/getzep/zep) is a temporal knowledge graph server. It's architecturally different — it tracks how facts change over time using a graph model. Powerful, but requires running a separate server with PostgreSQL and Redis. `semantic-recall` is an embedded library that lives inside your process.
+
+### vs LangChain Memory
+
+LangChain's `ConversationBufferMemory` stores raw conversation history (not facts). It's in-memory by default (lost on restart), doesn't do semantic search, and is part of a large framework. `semantic-recall` is a focused, standalone package that persists extracted facts with semantic retrieval.
+
+---
+
+## Contributing
+
+We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for:
+
+- Development setup and project structure
+- Coding standards and commit conventions
+- PR process and templates
+- High-impact contribution ideas (new adapters, batch ops, streaming, metadata)
+
+### Quick Links
+
+- [Bug Reports](https://github.com/skt329/semantic-recall/issues/new?template=bug_report.md)
+- [Feature Requests](https://github.com/skt329/semantic-recall/issues/new?template=feature_request.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+
+---
 
 ## Requirements
 
 - **Node.js** ≥ 18.0.0
-- **OS:** Any (Windows, macOS, Linux)
+- **OS**: Windows, macOS, Linux
 
 ## License
 
-MIT
+[MIT](LICENSE) — free forever.
+
+---
+
+<p align="center">
+  <sub>Built with care for the AI developer community.</sub>
+  <br />
+  <sub>If this saved you time, consider giving it a ⭐ on <a href="https://github.com/skt329/semantic-recall">GitHub</a>.</sub>
+</p>

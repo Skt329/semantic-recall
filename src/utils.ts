@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Vector math utilities and TTL parsing.
+ * semantic-recall — Vector math utilities and TTL parsing.
  *
  * Pure functions with zero side effects. These are the mathematical
  * foundation for similarity search and memory expiry.

@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Comprehensive Integration Tests
+ * semantic-recall — Comprehensive Integration Tests
  *
  * Tests all 15 scenarios from the spec using a mock embedder
  * (deterministic vectors) so tests are fast and don't require

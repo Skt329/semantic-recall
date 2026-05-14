@@ -1,5 +1,5 @@
 /**
- * semantic-memory — OpenAI Embedder Adapter
+ * semantic-recall — OpenAI Embedder Adapter
  *
  * Uses the OpenAI text-embedding-3-small model (1536 dimensions).
  * Requires an OpenAI API key passed via configuration.
@@ -27,7 +27,7 @@ export function createOpenAIEmbedder(
 ): EmbedderFunction {
   if (!apiKey) {
     throw new Error(
-      '[semantic-memory] OpenAI embedder requires an API key. ' +
+      '[semantic-recall] OpenAI embedder requires an API key. ' +
       "Pass it via `openaiApiKey` in the Memory constructor options."
     );
   }
@@ -45,7 +45,7 @@ export function createOpenAIEmbedder(
           return new OpenAI({ apiKey });
         } catch {
           throw new Error(
-            '[semantic-memory] The "openai" package is required for the OpenAI embedder. ' +
+            '[semantic-recall] The "openai" package is required for the OpenAI embedder. ' +
             'Install it with: npm install openai'
           );
         }
@@ -64,7 +64,7 @@ export function createOpenAIEmbedder(
 
     const embedding = response.data[0]?.embedding;
     if (!embedding || embedding.length === 0) {
-      throw new Error('[semantic-memory] OpenAI returned empty embedding');
+      throw new Error('[semantic-recall] OpenAI returned empty embedding');
     }
 
     return embedding;

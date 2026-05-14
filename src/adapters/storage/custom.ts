@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Custom Storage Adapter Validator
+ * semantic-recall — Custom Storage Adapter Validator
  *
  * Wraps a developer-supplied storage adapter with runtime validation
  * to catch missing or incorrectly typed methods early.
@@ -38,7 +38,7 @@ const REQUIRED_METHODS: (keyof StorageAdapter)[] = [
 export function validateCustomAdapter(adapter: StorageAdapter): StorageAdapter {
   if (!adapter || typeof adapter !== 'object') {
     throw new Error(
-      '[semantic-memory] Custom storage adapter must be an object implementing the StorageAdapter interface.'
+      '[semantic-recall] Custom storage adapter must be an object implementing the StorageAdapter interface.'
     );
   }
 
@@ -52,7 +52,7 @@ export function validateCustomAdapter(adapter: StorageAdapter): StorageAdapter {
 
   if (missing.length > 0) {
     throw new Error(
-      `[semantic-memory] Custom storage adapter is missing required methods: ${missing.join(', ')}. ` +
+      `[semantic-recall] Custom storage adapter is missing required methods: ${missing.join(', ')}. ` +
       'See the StorageAdapter interface in the documentation.'
     );
   }

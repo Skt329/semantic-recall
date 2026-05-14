@@ -11,3 +11,9 @@ tsup.config.ts
 coverage/
 node_modules/
 semantic_memory_build_prompt.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+task.md
+implementation_plan.md
+walkthrough.md

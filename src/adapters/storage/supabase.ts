@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Supabase Storage Adapter (pgvector)
+ * semantic-recall — Supabase Storage Adapter (pgvector)
  *
  * Uses Supabase with the pgvector extension for server-side
  * cosine similarity search. Significantly faster than JS-side
@@ -11,8 +11,8 @@
  *
  * @example
  * ```typescript
- * import { Memory } from 'semantic-memory'
- * import { createSupabaseAdapter } from 'semantic-memory/adapters/storage/supabase'
+ * import { Memory } from 'semantic-recall'
+ * import { createSupabaseAdapter } from 'semantic-recall/adapters/storage/supabase'
  *
  * const memory = new Memory({
  *   userId: 'user_123',
@@ -65,7 +65,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       return client;
     } catch {
       throw new Error(
-        '[semantic-memory] The "@supabase/supabase-js" package is required for the Supabase adapter. ' +
+        '[semantic-recall] The "@supabase/supabase-js" package is required for the Supabase adapter. ' +
         'Install it with: npm install @supabase/supabase-js'
       );
     }
@@ -91,7 +91,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       // Tables should be created via Supabase migrations.
       // Log the required SQL for the developer.
       console.info(
-        `[semantic-memory] Supabase adapter initialized. Ensure you have run the setup SQL:\n` +
+        `[semantic-recall] Supabase adapter initialized. Ensure you have run the setup SQL:\n` +
         `  CREATE EXTENSION IF NOT EXISTS vector;\n` +
         `  CREATE TABLE IF NOT EXISTS memories (\n` +
         `    id BIGSERIAL PRIMARY KEY,\n` +
@@ -122,7 +122,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
         .single() as { data?: { id: number }; error?: { message: string } };
 
       if (result.error) {
-        throw new Error(`[semantic-memory] Supabase insert failed: ${result.error.message}`);
+        throw new Error(`[semantic-recall] Supabase insert failed: ${result.error.message}`);
       }
 
       return result.data?.id ?? 0;
@@ -139,7 +139,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
         .or(`expires_at.is.null,expires_at.gt.${now}`) as { data?: RawMemoryRow[]; error?: { message: string } };
 
       if (result.error) {
-        throw new Error(`[semantic-memory] Supabase search failed: ${result.error.message}`);
+        throw new Error(`[semantic-recall] Supabase search failed: ${result.error.message}`);
       }
 
       return result.data ?? [];
@@ -193,7 +193,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
         .single() as { data?: { id: number }; error?: { message: string } };
 
       if (result.error) {
-        throw new Error(`[semantic-memory] Supabase enqueue failed: ${result.error.message}`);
+        throw new Error(`[semantic-recall] Supabase enqueue failed: ${result.error.message}`);
       }
 
       return result.data?.id ?? 0;

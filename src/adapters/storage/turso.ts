@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Turso Storage Adapter
+ * semantic-recall — Turso Storage Adapter
  *
  * Drop-in replacement for the SQLite adapter on serverless platforms
  * (Vercel, Cloudflare Workers, etc.) where there's no persistent filesystem.
@@ -9,8 +9,8 @@
  *
  * @example
  * ```typescript
- * import { Memory } from 'semantic-memory'
- * import { createTursoAdapter } from 'semantic-memory/adapters/storage/turso'
+ * import { Memory } from 'semantic-recall'
+ * import { createTursoAdapter } from 'semantic-recall/adapters/storage/turso'
  *
  * const memory = new Memory({
  *   userId: 'user_123',
@@ -64,7 +64,7 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
       return client;
     } catch {
       throw new Error(
-        '[semantic-memory] The "@libsql/client" package is required for the Turso adapter. ' +
+        '[semantic-recall] The "@libsql/client" package is required for the Turso adapter. ' +
         'Install it with: npm install @libsql/client'
       );
     }

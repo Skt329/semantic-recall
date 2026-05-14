@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Injection Pipeline
+ * semantic-recall — Injection Pipeline
  *
  * Orchestrates the full background memory injection flow:
  *   mark processing → embed → dimension check → dedup → TTL → prune → insert → mark done

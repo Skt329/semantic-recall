@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Recall Pipeline
+ * semantic-recall — Recall Pipeline
  *
  * Semantic similarity search against stored memories:
  *   embed query → load candidates → cosine similarity → filter → sort → return top-K

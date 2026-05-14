@@ -16,6 +16,6 @@ export default defineConfig({
     'openai',
   ],
   banner: {
-    js: '/* semantic-memory — persistent semantic memory for LLM apps */',
+    js: '/* semantic-recall — persistent semantic memory for LLM apps */',
   },
 });

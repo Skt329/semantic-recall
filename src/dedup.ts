@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Deduplication Engine
+ * semantic-recall — Deduplication Engine
  *
  * Prevents storing semantically identical memories by comparing
  * the incoming vector against all existing memories for a user+namespace.
@@ -100,7 +100,7 @@ export async function checkDimensionMismatch(params: {
 
     if (existingVector.length !== vector.length) {
       throw new Error(
-        `[semantic-memory] Dimension mismatch. ` +
+        `[semantic-recall] Dimension mismatch. ` +
         `Existing memories use ${existingVector.length}-dim vectors but ` +
         `current embedder returns ${vector.length}-dim vectors. ` +
         `Either clear the database with memory.forgetAll() or keep using the same embedder.`

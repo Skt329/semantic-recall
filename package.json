@@ -1,5 +1,5 @@
 {
-  "name": "semantic-memory",
+  "name": "semantic-recall",
   "version": "1.0.0",
   "description": "Drop-in persistent semantic memory for LLM apps. Zero config, zero API keys. Two methods: remember() and recall().",
   "type": "module",
@@ -35,7 +35,7 @@
   },
   "keywords": [
     "memory",
-    "semantic-memory",
+    "semantic-recall",
     "llm",
     "ai",
     "chatbot",
@@ -47,11 +47,11 @@
     "conversational-ai",
     "transformers"
   ],
-  "author": "",
+  "author": "skt329",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/semantic-memory"
+    "url": "https://github.com/skt329/semantic-recall"
   },
   "engines": {
     "node": ">=18.0.0"

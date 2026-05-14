@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Memory Class (Public API)
+ * semantic-recall — Memory Class (Public API)
  *
  * The single entry point for the package. Provides:
  *   - remember(text)      — fire-and-forget memory storage
@@ -11,7 +11,7 @@
  *
  * @example
  * ```typescript
- * import { Memory } from 'semantic-memory'
+ * import { Memory } from 'semantic-recall'
  *
  * const memory = new Memory({ userId: 'user_123' })
  * memory.remember("user is vegetarian")
@@ -43,7 +43,7 @@ import { parseTTL } from './utils.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const DEFAULT_DB_PATH = './semantic-memory.db';
+const DEFAULT_DB_PATH = './semantic-recall.db';
 const DEFAULT_NAMESPACE = 'default';
 const DEFAULT_DEDUP_THRESHOLD = 0.92;
 const DEFAULT_RECALL_THRESHOLD = 0.70;
@@ -91,7 +91,7 @@ export class Memory extends EventEmitter {
     // ─── Validate required options ─────────────────────────────────────
     if (!options.userId || typeof options.userId !== 'string') {
       throw new Error(
-        '[semantic-memory] userId is required and must be a non-empty string.'
+        '[semantic-recall] userId is required and must be a non-empty string.'
       );
     }
 
@@ -134,18 +134,18 @@ export class Memory extends EventEmitter {
       case 'turso':
         // Lazy-loaded in the turso adapter
         throw new Error(
-          '[semantic-memory] Turso adapter: use `storage: createTursoAdapter(...)` ' +
-          'from "semantic-memory/adapters/storage/turso".'
+          '[semantic-recall] Turso adapter: use `storage: createTursoAdapter(...)` ' +
+          'from "semantic-recall/adapters/storage/turso".'
         );
 
       case 'supabase':
         throw new Error(
-          '[semantic-memory] Supabase adapter: use `storage: createSupabaseAdapter(...)` ' +
-          'from "semantic-memory/adapters/storage/supabase".'
+          '[semantic-recall] Supabase adapter: use `storage: createSupabaseAdapter(...)` ' +
+          'from "semantic-recall/adapters/storage/supabase".'
         );
 
       default:
-        throw new Error(`[semantic-memory] Unknown storage adapter: ${storageOption}`);
+        throw new Error(`[semantic-recall] Unknown storage adapter: ${storageOption}`);
     }
   }
 
@@ -163,14 +163,14 @@ export class Memory extends EventEmitter {
       case 'openai': {
         if (!options.openaiApiKey) {
           throw new Error(
-            '[semantic-memory] OpenAI embedder requires `openaiApiKey` in options.'
+            '[semantic-recall] OpenAI embedder requires `openaiApiKey` in options.'
           );
         }
         return createOpenAIEmbedder(options.openaiApiKey, options.embeddingModel);
       }
 
       default:
-        throw new Error(`[semantic-memory] Unknown embedder: ${embedderOption}`);
+        throw new Error(`[semantic-recall] Unknown embedder: ${embedderOption}`);
     }
   }
 
@@ -185,7 +185,7 @@ export class Memory extends EventEmitter {
     const apiKey = options.llmApiKey;
     if (!apiKey) {
       throw new Error(
-        `[semantic-memory] LLM provider '${options.llmProvider}' requires 'llmApiKey' in options.`
+        `[semantic-recall] LLM provider '${options.llmProvider}' requires 'llmApiKey' in options.`
       );
     }
 
@@ -205,7 +205,7 @@ export class Memory extends EventEmitter {
           'https://api.anthropic.com/v1/',
         );
       default:
-        throw new Error(`[semantic-memory] Unknown LLM provider: ${options.llmProvider}`);
+        throw new Error(`[semantic-recall] Unknown LLM provider: ${options.llmProvider}`);
     }
   }
 
@@ -259,7 +259,7 @@ export class Memory extends EventEmitter {
     } catch (err) {
       // Non-fatal — log and continue. The developer can still use recall()
       // on an existing database even if init partially fails.
-      console.error('[semantic-memory] Initialization error:', err);
+      console.error('[semantic-recall] Initialization error:', err);
     }
   }
 
@@ -583,7 +583,7 @@ export class Memory extends EventEmitter {
   ): Promise<void> {
     if (!this.llmFn) {
       throw new Error(
-        '[semantic-memory] extractAndRemember() requires an LLM provider. ' +
+        '[semantic-recall] extractAndRemember() requires an LLM provider. ' +
         "Configure 'llmProvider' and 'llmApiKey' in the Memory constructor options."
       );
     }

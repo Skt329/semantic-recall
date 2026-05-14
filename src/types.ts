@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Core type definitions
+ * semantic-recall — Core type definitions
  *
  * All shared interfaces, types, and event payloads for the package.
  * This module is the single source of truth for the type system.
@@ -173,7 +173,7 @@ export interface MemoryOptions {
   /** Storage backend. Default: 'sqlite'. */
   storage?: 'sqlite' | 'turso' | 'supabase' | StorageAdapter;
 
-  /** SQLite database file path. Default: './semantic-memory.db'. */
+  /** SQLite database file path. Default: './semantic-recall.db'. */
   dbPath?: string;
 
   /** Connection string for Turso or Supabase. */

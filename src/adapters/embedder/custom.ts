@@ -1,5 +1,5 @@
 /**
- * semantic-memory — Custom Embedder Adapter
+ * semantic-recall — Custom Embedder Adapter
  *
  * Wraps a developer-supplied embedding function with validation
  * to ensure it returns a valid number[] vector.
@@ -24,7 +24,7 @@ import type { EmbedderFunction } from '../../types.js';
 export function createCustomEmbedder(fn: EmbedderFunction): EmbedderFunction {
   if (typeof fn !== 'function') {
     throw new Error(
-      '[semantic-memory] Custom embedder must be a function with signature: ' +
+      '[semantic-recall] Custom embedder must be a function with signature: ' +
       '(text: string) => Promise<number[]>'
     );
   }
@@ -34,14 +34,14 @@ export function createCustomEmbedder(fn: EmbedderFunction): EmbedderFunction {
 
     if (!Array.isArray(result)) {
       throw new Error(
-        '[semantic-memory] Custom embedder must return a number[]. ' +
+        '[semantic-recall] Custom embedder must return a number[]. ' +
         `Got ${typeof result} instead.`
       );
     }
 
     if (result.length === 0) {
       throw new Error(
-        '[semantic-memory] Custom embedder returned an empty vector. ' +
+        '[semantic-recall] Custom embedder returned an empty vector. ' +
         'Embeddings must have at least one dimension.'
       );
     }
@@ -49,7 +49,7 @@ export function createCustomEmbedder(fn: EmbedderFunction): EmbedderFunction {
     for (let i = 0; i < result.length; i++) {
       if (typeof result[i] !== 'number' || Number.isNaN(result[i])) {
         throw new Error(
-          `[semantic-memory] Custom embedder returned invalid value at index ${i}: ${result[i]}. ` +
+          `[semantic-recall] Custom embedder returned invalid value at index ${i}: ${result[i]}. ` +
           'All elements must be finite numbers.'
         );
       }

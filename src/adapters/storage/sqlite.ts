@@ -1,5 +1,5 @@
 /**
- * semantic-memory — SQLite Storage Adapter (Default)
+ * semantic-recall — SQLite Storage Adapter (Default)
  *
  * Uses better-sqlite3 for synchronous, fast reads/writes.
  * Stores embeddings as JSON-serialized TEXT columns.
