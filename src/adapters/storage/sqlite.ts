@@ -149,14 +149,24 @@ export class SQLiteStorageAdapter implements StorageAdapter {
   }
 
   async searchMemories(params: SearchParams): Promise<RawMemoryRow[]> {
-    const stmt = this.db.prepare(`
+    const now = nowISO();
+    let sql = `
       SELECT id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count
       FROM memories
       WHERE user_id = ? AND namespace = ?
-        AND (expires_at IS NULL OR expires_at > ?)
-    `);
+        AND (expires_at IS NULL OR expires_at > ?)`;
+    const args: unknown[] = [params.userId, params.namespace, now];
 
-    return stmt.all(params.userId, params.namespace, nowISO()) as RawMemoryRow[];
+    if (params.after) {
+      sql += ` AND created_at >= ?`;
+      args.push(params.after);
+    }
+    if (params.before) {
+      sql += ` AND created_at <= ?`;
+      args.push(params.before);
+    }
+
+    return this.db.prepare(sql).all(...args) as RawMemoryRow[];
   }
 
   async deleteMemory(id: number): Promise<void> {
@@ -241,8 +251,8 @@ export class SQLiteStorageAdapter implements StorageAdapter {
 
   async listNamespaces(userId: string): Promise<string[]> {
     const rows = this.db.prepare(
-      'SELECT DISTINCT namespace FROM memories WHERE user_id = ?'
-    ).all(userId) as Array<{ namespace: string }>;
+      'SELECT DISTINCT namespace FROM memories WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?)'
+    ).all(userId, nowISO()) as Array<{ namespace: string }>;
 
     return rows.map(r => r.namespace);
   }

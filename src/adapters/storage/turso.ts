@@ -173,13 +173,23 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
 
     async searchMemories(params: SearchParams): Promise<RawMemoryRow[]> {
       const db = await getClient();
-      const result = await db.execute({
-        sql: `SELECT id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count
+      const now = nowISO();
+      let sql = `SELECT id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count
               FROM memories
               WHERE user_id = ? AND namespace = ?
-                AND (expires_at IS NULL OR expires_at > ?)`,
-        args: [params.userId, params.namespace, nowISO()],
-      });
+                AND (expires_at IS NULL OR expires_at > ?)`;
+      const args: unknown[] = [params.userId, params.namespace, now];
+
+      if (params.after) {
+        sql += ` AND created_at >= ?`;
+        args.push(params.after);
+      }
+      if (params.before) {
+        sql += ` AND created_at <= ?`;
+        args.push(params.before);
+      }
+
+      const result = await db.execute({ sql, args });
       return result.rows as unknown as RawMemoryRow[];
     },
 
@@ -268,8 +278,8 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
     async listNamespaces(userId: string): Promise<string[]> {
       const db = await getClient();
       const result = await db.execute({
-        sql: 'SELECT DISTINCT namespace FROM memories WHERE user_id = ?',
-        args: [userId],
+        sql: 'SELECT DISTINCT namespace FROM memories WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?)',
+        args: [userId, nowISO()],
       });
       return (result.rows as unknown as Array<{ namespace: string }>).map(r => r.namespace);
     },

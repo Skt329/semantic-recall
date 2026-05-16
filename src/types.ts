@@ -26,6 +26,10 @@ export interface InsertMemoryParams {
 export interface SearchParams {
   userId: string;
   namespace: string;
+  /** ISO 8601 — inclusive lower bound for created_at filtering. */
+  after?: string;
+  /** ISO 8601 — inclusive upper bound for created_at filtering. */
+  before?: string;
 }
 
 /**
@@ -446,6 +450,8 @@ export interface InjectParams {
   replayed?: boolean;
   retried?: boolean;
   tags?: string[];
+  /** When true, skip markProcessing — caller already marked the job. */
+  skipMarkProcessing?: boolean;
 }
 
 export interface RecallParams {

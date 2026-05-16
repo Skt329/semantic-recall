@@ -51,24 +51,14 @@ export async function recallMemories(params: RecallParams): Promise<MemoryResult
   // Step 1: Embed the query
   const queryVector = await embedder(query);
 
-  // Step 2: Load all non-expired candidate memories
-  let candidates = await storage.searchMemories({ userId, namespace });
+  // Step 2: Load non-expired candidate memories (date filtering at SQL level)
+  let candidates = await storage.searchMemories({ userId, namespace, after, before });
 
   if (candidates.length === 0) {
     return [];
   }
 
-  // Step 3: Apply date range filters
-  if (after) {
-    const afterDate = new Date(after).getTime();
-    candidates = candidates.filter(r => new Date(r.created_at).getTime() >= afterDate);
-  }
-  if (before) {
-    const beforeDate = new Date(before).getTime();
-    candidates = candidates.filter(r => new Date(r.created_at).getTime() <= beforeDate);
-  }
-
-  // Step 3b: Apply tag filters (AND logic — memory must have ALL specified tags)
+  // Step 3: Apply tag filters (AND logic — memory must have ALL specified tags)
   if (tags && tags.length > 0) {
     candidates = candidates.filter(row => {
       const rowTags = parseTags(row.tags);

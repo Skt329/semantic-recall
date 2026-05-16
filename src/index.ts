@@ -37,6 +37,8 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_RETRY_INTERVAL_MS = 30_000;
 const DEFAULT_CLEANUP_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const RELATED_HARD_CAP = 5_000;
+const MAX_EXTRACTION_CHARS = 100_000;
+const MAX_EXTRACTION_MESSAGES = 200;
 
 const EXTRACTION_PROMPT = `You are a memory extraction assistant.
 Given the following conversation, extract facts about the user that are worth remembering long-term.
@@ -233,6 +235,11 @@ export class Memory extends EventEmitter {
     this.retryTimer = setInterval(async () => {
       try {
         const retryable = await this.storage.getRetryable();
+        // Pre-mark all as processing BEFORE dispatching to prevent
+        // the next scheduler tick from re-fetching the same jobs.
+        for (const job of retryable) {
+          await this.storage.markProcessing(job.id);
+        }
         for (const job of retryable) {
           void injectBackground({
             jobId: job.id, userId: job.userId, namespace: job.namespace,
@@ -240,6 +247,7 @@ export class Memory extends EventEmitter {
             embedder: this.embedder, storage: this.storage, retried: true,
             ttl: job.ttl ?? undefined,
             tags: job.tags ? JSON.parse(job.tags) : undefined,
+            skipMarkProcessing: true,
           }, this);
         }
       } catch { /* best-effort */ }
@@ -577,7 +585,11 @@ export class Memory extends EventEmitter {
       );
     }
 
-    const formatted = conversationHistory.map(m => `${m.role}: ${m.content}`).join('\n');
+    const capped = conversationHistory.slice(-MAX_EXTRACTION_MESSAGES);
+    let formatted = capped.map(m => `${m.role}: ${m.content}`).join('\n');
+    if (formatted.length > MAX_EXTRACTION_CHARS) {
+      formatted = formatted.slice(-MAX_EXTRACTION_CHARS);
+    }
     const response = await this.llmFn(EXTRACTION_PROMPT + formatted);
 
     let facts: string[];

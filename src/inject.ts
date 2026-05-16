@@ -51,8 +51,10 @@ export async function injectBackground(
   } = params;
 
   try {
-    // Step 1: Mark job as processing
-    await storage.markProcessing(jobId);
+    // Step 1: Mark job as processing (skip if caller already marked)
+    if (!params.skipMarkProcessing) {
+      await storage.markProcessing(jobId);
+    }
 
     // Step 2: Embed the text
     const vector = await embedder(content);

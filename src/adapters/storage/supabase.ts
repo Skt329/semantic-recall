@@ -247,12 +247,21 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
     async searchMemories(params: SearchParams): Promise<RawMemoryRow[]> {
       const db = await getClient();
       const now = nowISO();
-      const result = await db
+      let query = db
         .from('memories')
         .select('id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count')
         .eq('user_id', params.userId)
         .eq('namespace', params.namespace)
-        .or(`expires_at.is.null,expires_at.gt.${now}`) as { data?: RawMemoryRow[]; error?: { message: string } };
+        .or(`expires_at.is.null,expires_at.gt.${now}`);
+
+      if (params.after) {
+        query = query.gte('created_at', params.after);
+      }
+      if (params.before) {
+        query = query.lte('created_at', params.before);
+      }
+
+      const result = await query as { data?: RawMemoryRow[]; error?: { message: string } };
 
       if (result.error) {
         throw new Error(`[semantic-recall] Supabase search failed: ${result.error.message}`);
@@ -383,10 +392,12 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
      */
     async listNamespaces(userId: string): Promise<string[]> {
       const db = await getClient();
+      const now = nowISO();
       const result = await db
         .from('memories')
         .select('namespace')
-        .eq('user_id', userId) as { data?: Array<{ namespace: string }> };
+        .eq('user_id', userId)
+        .or(`expires_at.is.null,expires_at.gt.${now}`) as { data?: Array<{ namespace: string }> };
 
       const namespaces = new Set<string>();
       for (const row of result.data ?? []) {
