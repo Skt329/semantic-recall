@@ -8,9 +8,16 @@
   </p>
   <p align="center">
     <a href="https://www.npmjs.com/package/semantic-recall"><img src="https://img.shields.io/npm/v/semantic-recall?style=flat-square&color=cb3837" alt="npm version" /></a>
+    <a href="https://www.npmjs.com/package/semantic-recall"><img src="https://img.shields.io/npm/dw/semantic-recall?style=flat-square&color=cb3837" alt="npm downloads" /></a>
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" /></a>
     <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen?style=flat-square" alt="Node.js" /></a>
     <a href="https://github.com/skt329/semantic-recall"><img src="https://img.shields.io/github/stars/skt329/semantic-recall?style=flat-square" alt="Stars" /></a>
+  </p>
+  <p align="center">
+    📦 <a href="https://www.npmjs.com/package/semantic-recall">View on npm</a> ·
+    ⭐ <a href="https://github.com/skt329/semantic-recall">Star on GitHub</a> ·
+    🐛 <a href="https://github.com/skt329/semantic-recall/issues/new?template=bug_report.md">Report a Bug</a> ·
+    💡 <a href="https://github.com/skt329/semantic-recall/issues/new?template=feature_request.md">Request a Feature</a>
   </p>
 </p>
 
@@ -37,7 +44,7 @@ No vector database. No API keys. No Docker containers. Just `npm install` and go
 
 Most memory solutions require you to set up infrastructure, manage API keys, or lock into a paid platform. `semantic-recall` is different:
 
-| | semantic-recall | [Mem0](https://github.com/mem0ai/mem0) | [Zep](https://github.com/getzep/zep) | LangChain Memory |
+| | semantic-recall | [Mem0](https://github.com/mem0ai/mem0) | [Zep](https://github.com/getzep/zep) | [LangChain Memory](https://js.langchain.com/docs/modules/memory/) |
 |---|:---:|:---:|:---:|:---:|
 | **npm install & go** | ✅ | ❌ Requires API key or self-host setup | ❌ Requires server (Docker) | ✅ |
 | **Works offline** | ✅ Local embeddings | ❌ Cloud API calls | ❌ Server required | ❌ No built-in embeddings |
@@ -63,6 +70,17 @@ npm install semantic-recall
 ```
 
 > **First-run note:** The initial call downloads a ~25 MB embedding model to a local cache. After that, everything runs offline with zero network calls.
+
+---
+
+## Works Great With
+
+- [OpenAI Node SDK](https://github.com/openai/openai-node) — inject recalled facts directly into your `messages[]` array
+- [Vercel AI SDK](https://sdk.vercel.ai) — wrap `recall()` as a tool call for streaming chat apps
+- [LangChain JS](https://js.langchain.com) — use as a persistent, semantic drop-in memory module
+- [Turso](https://turso.tech) — serverless edge storage adapter built-in
+- [Supabase](https://supabase.com) — Postgres storage adapter built-in
+- [Transformers.js](https://huggingface.co/docs/transformers.js) — powers the local offline embeddings under the hood
 
 ---
 
@@ -509,7 +527,7 @@ app.get('/health/memory', async (req, res) => {
 
 ### vs LangChain Memory
 
-LangChain's `ConversationBufferMemory` stores raw conversation history (not facts). It's in-memory by default (lost on restart), doesn't do semantic search, and is part of a large framework. `semantic-recall` is a focused, standalone package that persists extracted facts with semantic retrieval.
+[LangChain's memory modules](https://js.langchain.com/docs/modules/memory/) store raw conversation history (not facts). They are in-memory by default (lost on restart), don't do semantic search, and are part of a large framework. `semantic-recall` is a focused, standalone package that persists extracted facts with semantic retrieval.
 
 ---
 
@@ -546,4 +564,6 @@ We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for:
   <sub>Built with care for the AI developer community.</sub>
   <br />
   <sub>If this saved you time, consider giving it a ⭐ on <a href="https://github.com/skt329/semantic-recall">GitHub</a>.</sub>
+  <br /><br />
+  <sub>🤖 AI/LLM tool or crawler? See <a href="./llms.txt"><code>llms.txt</code></a> for a structured summary of this package.</sub>
 </p>
