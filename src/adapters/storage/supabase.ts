@@ -324,18 +324,31 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       }
     },
 
+    /**
+     * Increment recall count for the given memory IDs.
+     *
+     * Requires an RPC function in your Supabase project:
+     * ```sql
+     * CREATE OR REPLACE FUNCTION increment_recall_count(memory_ids bigint[])
+     * RETURNS void AS $$
+     *   UPDATE memories
+     *   SET recall_count = COALESCE(recall_count, 0) + 1
+     *   WHERE id = ANY(memory_ids);
+     * $$ LANGUAGE sql;
+     * ```
+     *
+     * If the RPC is not installed, this silently no-ops — recall analytics
+     * will not track, but no errors are thrown.
+     */
     async incrementRecallCount(ids: number[]): Promise<void> {
       if (ids.length === 0) return;
 
-      // Supabase anon key cannot run raw SQL for batch increment.
-      // Log a dev-mode warning and no-op — this is analytics-only.
-      if (process.env['NODE_ENV'] !== 'production') {
-        console.warn(
-          `[semantic-recall] incrementRecallCount is a no-op on the Supabase adapter. ` +
-          `To enable recall counting, create an RPC function: ` +
-          `CREATE FUNCTION increment_recall_count(ids bigint[]) RETURNS void AS $$ ` +
-          `UPDATE memories SET recall_count = COALESCE(recall_count, 0) + 1 WHERE id = ANY(ids); $$ LANGUAGE sql;`
-        );
+      const db = await getClient();
+      try {
+        await db.rpc('increment_recall_count', { memory_ids: ids });
+      } catch {
+        // RPC not installed — analytics silently disabled.
+        // This is fire-and-forget on the hot path.
       }
     },
 
@@ -355,14 +368,21 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
     /**
      * List distinct namespaces for a user.
      *
-     * **Scalability note:** Supabase JS client does not support `DISTINCT`.
-     * This fetches all namespace values and deduplicates in JS. For users
-     * with large memory stores (>10,000 memories), consider creating an
-     * RPC function: `SELECT DISTINCT namespace FROM memories WHERE user_id = $1`
+     * **Scalability warning:** Supabase JS client does not support `DISTINCT`.
+     * This fetches ALL namespace values for the user and deduplicates in JS.
+     * Performance degrades linearly with total memory count — a user with
+     * 100,000 memories transfers 100,000 rows just to extract unique strings.
+     *
+     * For production workloads (>5,000 memories per user), create an RPC:
+     * ```sql
+     * CREATE OR REPLACE FUNCTION list_namespaces(p_user_id text)
+     * RETURNS TABLE(namespace text) AS $$
+     *   SELECT DISTINCT namespace FROM memories WHERE user_id = p_user_id;
+     * $$ LANGUAGE sql;
+     * ```
      */
     async listNamespaces(userId: string): Promise<string[]> {
       const db = await getClient();
-      // Supabase doesn't support DISTINCT directly, so we fetch and deduplicate
       const result = await db
         .from('memories')
         .select('namespace')
@@ -375,53 +395,82 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       return Array.from(namespaces);
     },
 
+    /**
+     * Compute aggregate stats using efficient Supabase queries.
+     *
+     * Uses HEAD requests with `count: 'exact'` for totals and targeted
+     * queries with `limit(1)` for min/max/top — avoids loading all rows
+     * into JS heap. Namespace counts still require a lightweight select
+     * of the namespace column only (no embeddings or content transferred).
+     */
     async getStats(userId: string): Promise<AdapterStats> {
       const db = await getClient();
       const now = nowISO();
+      const liveFilter = `expires_at.is.null,expires_at.gt.${now}`;
 
-      // Fetch all live memories for stats computation
-      const allResult = await db
+      // 1. Total live memories (HEAD-only, no row data transferred)
+      const countResult = await db
         .from('memories')
-        .select('id, namespace, content, created_at, expires_at, recall_count')
+        .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
-        .or(`expires_at.is.null,expires_at.gt.${now}`) as { data?: Array<{
-          id: number; namespace: string; content: string;
-          created_at: string; expires_at: string | null; recall_count: number | null;
-        }> };
+        .or(liveFilter) as { count?: number | null };
 
-      const allMemories = allResult.data ?? [];
+      // 2. Oldest date (single row, ascending)
+      const oldestResult = await db
+        .from('memories')
+        .select('created_at')
+        .eq('user_id', userId)
+        .or(liveFilter)
+        .order('created_at', { ascending: true })
+        .limit(1) as { data?: Array<{ created_at: string }> };
 
-      // Dead jobs
+      // 3. Newest date (single row, descending)
+      const newestResult = await db
+        .from('memories')
+        .select('created_at')
+        .eq('user_id', userId)
+        .or(liveFilter)
+        .order('created_at', { ascending: false })
+        .limit(1) as { data?: Array<{ created_at: string }> };
+
+      // 4. Most recalled (single row, descending by recall_count)
+      const recalledResult = await db
+        .from('memories')
+        .select('content, recall_count')
+        .eq('user_id', userId)
+        .or(liveFilter)
+        .gt('recall_count', 0)
+        .order('recall_count', { ascending: false })
+        .limit(1) as { data?: Array<{ content: string; recall_count: number }> };
+
+      // 5. Dead jobs count (HEAD-only)
       const deadResult = await db
         .from('pending_memories')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
         .eq('status', 'dead') as { count?: number | null };
 
-      // Compute namespace counts
+      // 6. Namespace counts — lightweight select of namespace column only
+      const nsResult = await db
+        .from('memories')
+        .select('namespace')
+        .eq('user_id', userId)
+        .or(liveFilter) as { data?: Array<{ namespace: string }> };
+
       const namespaceCounts: Record<string, number> = {};
-      for (const row of allMemories) {
+      for (const row of nsResult.data ?? []) {
         namespaceCounts[row.namespace] = (namespaceCounts[row.namespace] ?? 0) + 1;
       }
 
-      // Sort for date range
-      const sorted = [...allMemories].sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-
-      // Most recalled
-      const mostRecalled = allMemories.reduce<{ content: string; recallCount: number } | null>(
-        (best, row) => {
-          const rc = row.recall_count ?? 0;
-          return rc > (best?.recallCount ?? 0) ? { content: row.content, recallCount: rc } : best;
-        }, null
-      );
+      const topRecalled = recalledResult.data?.[0];
 
       return {
-        totalMemories: allMemories.length,
-        oldestDate: sorted[0]?.created_at ?? null,
-        newestDate: sorted.at(-1)?.created_at ?? null,
-        mostRecalled: mostRecalled?.recallCount ? mostRecalled : null,
+        totalMemories: countResult.count ?? 0,
+        oldestDate: oldestResult.data?.[0]?.created_at ?? null,
+        newestDate: newestResult.data?.[0]?.created_at ?? null,
+        mostRecalled: topRecalled
+          ? { content: topRecalled.content, recallCount: topRecalled.recall_count }
+          : null,
         deadJobCount: deadResult.count ?? 0,
         namespaceCounts,
         storageSizeKB: null, // Supabase does not expose storage size via client API
@@ -562,33 +611,30 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
         .eq('status', 'processing');
     },
 
+    /**
+     * Delete completed jobs older than the given age.
+     *
+     * Uses a single DELETE with `count: 'exact'` which Supabase resolves
+     * atomically in a single Postgres statement — no TOCTOU race between
+     * counting and deleting.
+     */
     async cleanupDoneJobs(olderThanMs: number): Promise<number> {
       const db = await getClient();
       const cutoff = new Date(Date.now() - olderThanMs).toISOString();
 
-      // HEAD request with count:exact fetches only the count from Postgres
-      // without pulling any row data into JS memory — much more efficient
-      // than SELECT * for large tables.
-      const countResult = await db
+      // Supabase supports { count: 'exact' } on delete() — Postgres returns
+      // the count of affected rows atomically in the same statement.
+      const result = await db
         .from('pending_memories')
-        .select('id', { count: 'exact', head: true })
+        .delete({ count: 'exact' })
         .eq('status', 'done')
-        .lt('created_at', cutoff) as { count?: number | null };
+        .lt('created_at', cutoff) as { count?: number | null; error?: { message: string } };
 
-      // Note: COUNT and DELETE are separate queries. The returned count
-      // may not exactly match rows deleted if concurrent writes occur.
-      // This is acceptable — the value is informational, not transactional.
-      const deleteCount = countResult.count ?? 0;
-
-      if (deleteCount > 0) {
-        await db
-          .from('pending_memories')
-          .delete()
-          .eq('status', 'done')
-          .lt('created_at', cutoff);
+      if (result.error) {
+        throw new Error(`[semantic-recall] Supabase cleanup failed: ${result.error.message}`);
       }
 
-      return deleteCount;
+      return result.count ?? 0;
     },
 
     async retryDeadJob(jobId: number): Promise<void> {
