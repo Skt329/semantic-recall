@@ -1,0 +1,184 @@
+# semantic-recall — Full Reference
+
+> Persistent semantic memory for LLM apps, AI agents, and chatbots — zero config, zero API keys, works fully offline.
+
+npm: https://www.npmjs.com/package/semantic-recall
+GitHub: https://github.com/skt329/semantic-recall
+License: MIT | Node.js >= 18
+
+---
+
+## Problem It Solves
+
+Every LLM chatbot forgets everything between sessions. Users repeat themselves. Context is lost.
+`semantic-recall` fixes this in two lines of code — no infrastructure required.
+
+---
+
+## Installation
+
+```bash
+npm install semantic-recall
+```
+
+First run downloads ~25 MB embedding model to local cache. After that, everything runs offline.
+
+---
+
+## Quick Start
+
+```typescript
+import { Memory } from 'semantic-recall'
+
+const memory = new Memory({ userId: 'user_123' })
+
+memory.remember("User is vegetarian and allergic to nuts")
+
+const facts = await memory.recall("What should I recommend for dinner?")
+// → ["User is vegetarian and allergic to nuts"]
+```
+
+---
+
+## Full API
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `memory.remember(text, opts?)` | `void` | Store a memory. Fire-and-forget, never throws. |
+| `memory.rememberAndWait(text, opts?)` | `Promise<RememberResult>` | Store and wait for confirmation. Returns `{ saved, duplicate }`. |
+| `memory.recall(query, opts?)` | `Promise<string[]>` | Semantic search. Returns content strings. |
+| `memory.recallDetailed(query, opts?)` | `Promise<MemoryResult[]>` | Like recall but with similarity scores + metadata. |
+| `memory.extractAndRemember(messages, opts?)` | `Promise<void>` | LLM-powered fact extraction from conversation messages. |
+| `memory.forget(memoryId)` | `Promise<void>` | Delete a specific memory by ID. |
+| `memory.forgetAll(opts?)` | `Promise<void>` | Delete all memories for user + namespace. |
+| `memory.list(opts?)` | `Promise<MemoryResult[]>` | List all stored memories without semantic search. |
+| `memory.getDeadJobs()` | `Promise<MemoryJob[]>` | Inspect jobs that failed all retry attempts. |
+| `memory.retryDead(jobId)` | `Promise<void>` | Manually retry a dead job. |
+| `memory.cleanup(opts?)` | `Promise<{ deleted }>` | Prune old completed jobs from the queue. |
+| `memory.destroy()` | `void` | Stop scheduler, close DB connection. |
+
+---
+
+## Configuration Options
+
+```typescript
+const memory = new Memory({
+  // Required
+  userId: 'user_123',
+
+  // Storage
+  storage: 'sqlite',             // 'sqlite' | StorageAdapter
+  dbPath: './semantic-recall.db',
+
+  // Embedder
+  embedder: 'local',             // 'local' | 'openai' | EmbedderFunction
+  embeddingModel: 'Xenova/all-MiniLM-L6-v2',
+  openaiApiKey: '...',
+
+  // Behavior
+  namespace: 'default',
+  dedupThreshold: 0.92,          // Cosine similarity threshold for dedup
+  recallThreshold: 0.70,         // Minimum similarity to return in recall
+  topK: 5,                       // Max results per recall()
+
+  // Reliability
+  maxAttempts: 3,
+  retryIntervalMs: 30_000,
+
+  // LLM Auto-Extraction
+  llmProvider: 'openai',         // 'openai' | 'gemini' | 'claude' | LLMFunction
+  llmApiKey: '...',
+  llmModel: 'gpt-4o-mini',
+})
+```
+
+---
+
+## Events
+
+```typescript
+memory.on('memory:saved', ({ content, jobId }) => { ... })
+memory.on('memory:duplicate', ({ content }) => { ... })
+memory.on('memory:retry', ({ content, error, attempts }) => { ... })
+memory.on('memory:dead', ({ content, error }) => { ... })
+```
+
+---
+
+## Storage Adapters
+
+- **SQLite** (default): zero config, WAL mode, works on any filesystem
+- **Turso**: serverless/edge deployments — `npm install @libsql/client`
+- **Supabase**: Postgres at scale — `npm install @supabase/supabase-js`
+- **Custom**: implement the `StorageAdapter` interface for any backend
+
+---
+
+## Embedder Adapters
+
+- **Local** (default): Transformers.js in an isolated worker thread, runs offline
+- **OpenAI**: `text-embedding-3-small` or any OpenAI embedding model
+- **Custom**: pass any `async (text: string): Promise<number[]>` function
+
+---
+
+## LLM Auto-Extraction Example
+
+```typescript
+const memory = new Memory({
+  userId: 'user_123',
+  llmProvider: 'openai',
+  llmApiKey: process.env.OPENAI_API_KEY,
+})
+
+await memory.extractAndRemember([
+  { role: 'user', content: "I just moved to Tokyo from London" },
+  { role: 'assistant', content: "Welcome to Tokyo! How exciting..." },
+])
+// Automatically extracts and stores:
+// → "User lives in Tokyo"
+// → "User previously lived in London"
+```
+
+Supported providers: `openai`, `gemini`, `claude`, or any custom `LLMFunction`.
+
+---
+
+## Comparison
+
+| Feature | semantic-recall | Mem0 | Zep | LangChain Memory |
+|---------|:-:|:-:|:-:|:-:|
+| npm install & go | ✅ | ❌ API key/self-host | ❌ Docker server | ✅ |
+| Works offline | ✅ local embeddings | ❌ cloud calls | ❌ server required | ❌ no embeddings |
+| Persistent across sessions | ✅ SQLite on disk | ✅ cloud | ✅ server | ❌ in-memory |
+| Semantic search | ✅ cosine similarity | ✅ | ✅ knowledge graph | ❌ keyword only |
+| Auto deduplication | ✅ | ✅ | ❌ | ❌ |
+| Crash recovery | ✅ persistent queue | ❌ | ❌ | ❌ |
+| TTL / auto-expiry | ✅ | ❌ | ❌ | ❌ |
+| Multi-tenant | ✅ userId + namespace | ✅ | ✅ | ❌ |
+| Free & open-source | ✅ MIT forever | Freemium | Freemium | ✅ MIT |
+
+---
+
+## TypeScript Exports
+
+```typescript
+import type {
+  MemoryOptions, RememberOptions, RecallOptions,
+  MemoryResult, RememberResult, MemoryJob,
+  StorageAdapter, EmbedderFunction,
+  ConversationMessage, LLMFunction,
+  MemorySavedEvent, MemoryRetryEvent, MemoryDeadEvent,
+} from 'semantic-recall'
+```
+
+---
+
+## Requirements
+
+- Node.js >= 18.0.0
+- OS: Windows, macOS, Linux
+
+## License
+
+MIT — free forever.

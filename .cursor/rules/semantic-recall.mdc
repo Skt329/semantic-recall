@@ -1,0 +1,61 @@
+---
+description: Usage rules and patterns for the semantic-recall npm package
+globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+---
+
+# semantic-recall — Cursor AI Rules
+
+`semantic-recall` is installed in this project. It provides persistent semantic memory for LLM apps with zero infrastructure.
+
+## Import
+
+```typescript
+import { Memory } from 'semantic-recall'
+```
+
+## Basic Usage
+
+```typescript
+const memory = new Memory({ userId: 'user_123' })
+
+// Store — fire-and-forget, never throws
+memory.remember("User prefers dark mode")
+
+// Retrieve semantically relevant facts
+const facts = await memory.recall("UI preferences")
+// inject facts into your LLM system prompt
+```
+
+## Key Rules
+
+- Always pass a `userId` — memory is scoped per user
+- `remember()` is fire-and-forget and never throws — safe to call anywhere
+- `recall()` returns `string[]` — map them into your system prompt
+- Use `namespace` to separate memory categories (e.g. `'health'`, `'work'`)
+- Use `ttl` for temporary facts: `memory.remember("...", { ttl: '7d' })`
+- Call `memory.destroy()` on graceful shutdown to close DB and stop scheduler
+
+## Inject Into LLM Prompt Pattern
+
+```typescript
+const context = await memory.recall(userMessage)
+const systemPrompt = `You are a helpful assistant.
+Known facts about the user:
+${context.map(f => `- ${f}`).join('\n')}`
+```
+
+## Auto-Extract Facts From Conversations
+
+```typescript
+await memory.extractAndRemember(messages, { llmProvider: 'openai', llmApiKey: '...' })
+```
+
+## Storage Options
+
+- Default: SQLite (zero config)
+- Serverless/edge: Turso adapter — `import { createTursoAdapter } from 'semantic-recall/adapters/storage/turso'`
+- Postgres: Supabase adapter — `import { createSupabaseAdapter } from 'semantic-recall/adapters/storage/supabase'`
+
+## Full Docs
+
+https://github.com/skt329/semantic-recall

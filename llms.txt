@@ -1,0 +1,66 @@
+# semantic-recall
+
+> Persistent semantic memory for LLM apps, AI agents, and chatbots — zero config, zero API keys, works fully offline.
+
+## Package
+
+- npm: https://www.npmjs.com/package/semantic-recall
+- GitHub: https://github.com/skt329/semantic-recall
+- License: MIT
+- Node.js: >= 18
+
+## What It Does
+
+`semantic-recall` gives any LLM app, AI agent, or chatbot persistent memory using local embeddings and SQLite.
+No vector database. No API keys. No Docker. Just `npm install semantic-recall` and two methods: `remember()` and `recall()`.
+
+Memories are stored as semantic embeddings using Transformers.js (runs fully offline after the first ~25 MB model download).
+Retrieval uses cosine similarity search, so `recall("dinner preferences")` correctly surfaces `"user is vegetarian"`.
+
+## Core API
+
+```typescript
+import { Memory } from 'semantic-recall'
+
+const memory = new Memory({ userId: 'user_123' })
+
+// Store a fact — fire-and-forget, never throws
+memory.remember("User prefers dark mode")
+
+// Retrieve semantically relevant facts for your LLM prompt
+const facts = await memory.recall("What UI settings does this user prefer?")
+// → ["User prefers dark mode"]
+```
+
+## Key Features
+
+- Zero infrastructure: SQLite on disk, embeddings run in a worker thread
+- Works offline: local Transformers.js model (Xenova/all-MiniLM-L6-v2)
+- Crash-safe: persistent queue with exponential backoff and dead letter queue
+- Auto deduplication: configurable cosine similarity threshold
+- TTL / auto-expiry: supports `"7d"`, `"1h"`, `"30m"` formats
+- Multi-tenant: userId + namespace scoping
+- LLM auto-extraction: extract facts from raw conversation messages
+- Storage adapters: SQLite (default), Turso, Supabase, or custom
+- Embedder adapters: local (default), OpenAI, or custom function
+- Full TypeScript support with exported types
+
+## Use Cases
+
+- Add persistent memory to OpenAI, Gemini, Claude, or any LLM chatbot
+- Give AI agents memory across sessions in agentic frameworks
+- Use inside Cursor, GitHub Copilot, or any AI coding assistant context
+- Mem0 alternative for developers who want zero infrastructure
+- LangChain memory alternative that works without the full framework
+- Persistent user context for Vercel AI SDK apps
+- MCP (Model Context Protocol) compatible memory layer
+
+## Installation
+
+```bash
+npm install semantic-recall
+```
+
+## Full Documentation
+
+See: https://github.com/skt329/semantic-recall/blob/main/README.md

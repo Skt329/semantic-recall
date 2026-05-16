@@ -1,7 +1,7 @@
 {
   "name": "semantic-recall",
-  "version": "1.0.0",
-  "description": "Drop-in persistent semantic memory for LLM apps. Zero config, zero API keys. Two methods: remember() and recall().",
+  "version": "1.0.1",
+  "description": "Persistent semantic memory for LLM apps, AI agents, and chatbots. Zero config, zero API keys, works fully offline. SQLite + local embeddings via Transformers.js. Two methods: remember() and recall(). Drop-in Mem0 alternative and LangChain memory alternative.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -36,22 +36,45 @@
   "keywords": [
     "memory",
     "semantic-recall",
+    "semantic-memory",
     "llm",
+    "llm-memory",
     "ai",
+    "ai-memory",
+    "ai-agent",
+    "agent-memory",
     "chatbot",
+    "chatbot-memory",
     "embedding",
     "vector",
+    "vector-search",
     "sqlite",
     "persistent-memory",
     "rag",
+    "retrieval-augmented-generation",
     "conversational-ai",
-    "transformers"
+    "transformers",
+    "local-embeddings",
+    "offline-embedding",
+    "zero-config",
+    "context-window",
+    "mcp",
+    "model-context-protocol",
+    "cursor-ai",
+    "openai-memory",
+    "langchain-alternative",
+    "mem0-alternative",
+    "semantic-search"
   ],
   "author": "skt329",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/skt329/semantic-recall"
+  },
+  "homepage": "https://github.com/skt329/semantic-recall#readme",
+  "bugs": {
+    "url": "https://github.com/skt329/semantic-recall/issues"
   },
   "engines": {
     "node": ">=18.0.0"
