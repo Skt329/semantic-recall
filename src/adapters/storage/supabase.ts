@@ -19,6 +19,9 @@
  *   storage: createSupabaseAdapter({
  *     url: 'https://your-project.supabase.co',
  *     anonKey: 'your-anon-key',
+ *     // Optional: provide serviceRoleKey for reliable init() table validation
+ *     // when RLS policies are enabled on your project.
+ *     serviceRoleKey: 'your-service-role-key',
  *     dimensions: 384,
  *   }),
  * })
@@ -39,6 +42,14 @@ import { computeBackoffMs, nowISO } from '../../utils.js';
 export interface SupabaseAdapterOptions {
   url: string;
   anonKey: string;
+  /**
+   * Optional Supabase service role key.
+   * When provided, it is used exclusively during init() for table existence
+   * probing so RLS policies do not interfere with startup validation.
+   * All runtime operations (insert, search, delete, queue) continue to use
+   * the anonKey. Never expose the service role key on the client side.
+   */
+  serviceRoleKey?: string;
   /** Vector dimensions. Default: 384 (all-MiniLM-L6-v2). */
   dimensions?: number;
 }
@@ -54,11 +65,14 @@ type SupabaseClient = {
  */
 export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageAdapter {
   const dimensions = options.dimensions ?? 384;
+
+  // Runtime client — uses anonKey for all data operations
   let client: SupabaseClient | null = null;
+  // Admin client — uses serviceRoleKey only for init() table probing
+  let adminClient: SupabaseClient | null = null;
 
   async function getClient(): Promise<SupabaseClient> {
     if (client) return client;
-
     try {
       const { createClient } = await import('@supabase/supabase-js');
       client = createClient(options.url, options.anonKey) as unknown as SupabaseClient;
@@ -68,6 +82,20 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
         '[semantic-recall] The "@supabase/supabase-js" package is required for the Supabase adapter. ' +
         'Install it with: npm install @supabase/supabase-js'
       );
+    }
+  }
+
+  async function getAdminClient(): Promise<SupabaseClient> {
+    // If no serviceRoleKey provided, fall back to the regular client
+    if (!options.serviceRoleKey) return getClient();
+    if (adminClient) return adminClient;
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      adminClient = createClient(options.url, options.serviceRoleKey) as unknown as SupabaseClient;
+      return adminClient;
+    } catch {
+      // If admin client creation fails for any reason, fall back gracefully
+      return getClient();
     }
   }
 
@@ -86,24 +114,83 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
     };
   }
 
+  // Full setup SQL shown to developer when tables are missing
+  const SETUP_SQL =
+    `-- Run this SQL in your Supabase SQL Editor or as a migration:\n` +
+    `CREATE EXTENSION IF NOT EXISTS vector;\n\n` +
+    `CREATE TABLE IF NOT EXISTS memories (\n` +
+    `  id BIGSERIAL PRIMARY KEY,\n` +
+    `  user_id TEXT NOT NULL,\n` +
+    `  namespace TEXT NOT NULL DEFAULT 'default',\n` +
+    `  content TEXT NOT NULL,\n` +
+    `  embedding vector(${dimensions}),\n` +
+    `  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n` +
+    `  expires_at TIMESTAMPTZ\n` +
+    `);\n` +
+    `CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, namespace);\n\n` +
+    `CREATE TABLE IF NOT EXISTS pending_memories (\n` +
+    `  id BIGSERIAL PRIMARY KEY,\n` +
+    `  user_id TEXT NOT NULL,\n` +
+    `  namespace TEXT NOT NULL DEFAULT 'default',\n` +
+    `  content TEXT NOT NULL,\n` +
+    `  status TEXT NOT NULL DEFAULT 'pending',\n` +
+    `  attempts INTEGER NOT NULL DEFAULT 0,\n` +
+    `  max_attempts INTEGER NOT NULL DEFAULT 3,\n` +
+    `  last_error TEXT,\n` +
+    `  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n` +
+    `  next_retry_at TIMESTAMPTZ\n` +
+    `);\n` +
+    `CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_memories(status, next_retry_at);`;
+
+  // Postgres error code for "relation does not exist" (undefined table)
+  const MISSING_TABLE_CODE = '42P01';
+
   const adapter: StorageAdapter = {
     async init(): Promise<void> {
-      // Tables should be created via Supabase migrations.
-      // Log the required SQL for the developer.
-      console.info(
-        `[semantic-recall] Supabase adapter initialized. Ensure you have run the setup SQL:\n` +
-        `  CREATE EXTENSION IF NOT EXISTS vector;\n` +
-        `  CREATE TABLE IF NOT EXISTS memories (\n` +
-        `    id BIGSERIAL PRIMARY KEY,\n` +
-        `    user_id TEXT NOT NULL,\n` +
-        `    namespace TEXT NOT NULL DEFAULT 'default',\n` +
-        `    content TEXT NOT NULL,\n` +
-        `    embedding vector(${dimensions}),\n` +
-        `    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n` +
-        `    expires_at TIMESTAMPTZ\n` +
-        `  );\n` +
-        `  CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, namespace);\n`
-      );
+      // Use admin client for probing so RLS policies do not block the check.
+      // Falls back to anonKey client if no serviceRoleKey was provided.
+      const db = await getAdminClient();
+
+      const memoriesProbe = await db
+        .from('memories')
+        .select('id')
+        .limit(0) as { error?: { message: string; code?: string } };
+
+      const pendingProbe = await db
+        .from('pending_memories')
+        .select('id')
+        .limit(0) as { error?: { message: string; code?: string } };
+
+      const missing: string[] = [];
+      if (memoriesProbe.error?.code === MISSING_TABLE_CODE) missing.push('memories');
+      if (pendingProbe.error?.code === MISSING_TABLE_CODE) missing.push('pending_memories');
+
+      if (missing.length > 0) {
+        throw new Error(
+          `[semantic-recall] Supabase table(s) missing: ${missing.join(', ')}.\n` +
+          `Run the following SQL in your Supabase SQL Editor:\n\n${SETUP_SQL}`
+        );
+      }
+
+      // Non-table-missing errors (RLS blocks, network issues) are surfaced as
+      // warnings rather than hard failures — the adapter may still work fine
+      // at runtime depending on the user's RLS policy configuration.
+      if (memoriesProbe.error && memoriesProbe.error.code !== MISSING_TABLE_CODE) {
+        console.warn(
+          `[semantic-recall] Supabase 'memories' probe returned a non-fatal error ` +
+          `(code: ${memoriesProbe.error.code}): ${memoriesProbe.error.message}. ` +
+          `This may indicate RLS policies are blocking access. ` +
+          `Provide a serviceRoleKey in adapter options for reliable startup validation.`
+        );
+      }
+      if (pendingProbe.error && pendingProbe.error.code !== MISSING_TABLE_CODE) {
+        console.warn(
+          `[semantic-recall] Supabase 'pending_memories' probe returned a non-fatal error ` +
+          `(code: ${pendingProbe.error.code}): ${pendingProbe.error.message}. ` +
+          `This may indicate RLS policies are blocking access. ` +
+          `Provide a serviceRoleKey in adapter options for reliable startup validation.`
+        );
+      }
     },
 
     async insertMemory(params: InsertMemoryParams): Promise<number> {
@@ -240,11 +327,26 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
     async getRetryable(): Promise<MemoryJob[]> {
       const db = await getClient();
       const now = nowISO();
+
+      // Build an explicit OR filter that covers all 4 valid combinations:
+      //   (pending AND no retry time set)
+      //   (pending AND retry time is due)
+      //   (failed  AND no retry time set)
+      //   (failed  AND retry time is due)
+      //
+      // Chaining two separate .or() calls is ambiguous across supabase-js
+      // versions — a single compound or() string is unambiguous and maps
+      // directly to the Postgres WHERE clause we want.
+      const filter =
+        `and(status.eq.pending,next_retry_at.is.null),` +
+        `and(status.eq.pending,next_retry_at.lte.${now}),` +
+        `and(status.eq.failed,next_retry_at.is.null),` +
+        `and(status.eq.failed,next_retry_at.lte.${now})`;
+
       const result = await db
         .from('pending_memories')
         .select('*')
-        .or(`status.eq.pending,status.eq.failed`)
-        .or(`next_retry_at.is.null,next_retry_at.lte.${now}`) as { data?: Record<string, unknown>[] };
+        .or(filter) as { data?: Record<string, unknown>[] };
 
       return (result.data ?? []).map(mapJobRow);
     },
@@ -271,12 +373,27 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
     async cleanupDoneJobs(olderThanMs: number): Promise<number> {
       const db = await getClient();
       const cutoff = new Date(Date.now() - olderThanMs).toISOString();
-      await db
+
+      // HEAD request with count:exact fetches only the count from Postgres
+      // without pulling any row data into JS memory — much more efficient
+      // than SELECT * for large tables.
+      const countResult = await db
         .from('pending_memories')
-        .delete()
+        .select('id', { count: 'exact', head: true })
         .eq('status', 'done')
-        .lt('created_at', cutoff);
-      return 0; // Supabase doesn't return delete count easily
+        .lt('created_at', cutoff) as { count?: number | null };
+
+      const deleteCount = countResult.count ?? 0;
+
+      if (deleteCount > 0) {
+        await db
+          .from('pending_memories')
+          .delete()
+          .eq('status', 'done')
+          .lt('created_at', cutoff);
+      }
+
+      return deleteCount;
     },
 
     async retryDeadJob(jobId: number): Promise<void> {
@@ -294,6 +411,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
 
     close(): void {
       client = null;
+      adminClient = null;
     },
   };
 
