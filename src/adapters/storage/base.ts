@@ -82,8 +82,10 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
    * Override with optimized SQL (e.g., COUNT + PRAGMA page_count) for
    * better performance on large datasets.
    *
-   * Note: This implementation uses an N+1 query pattern per namespace.
-   * Acceptable for the default, but override for production workloads.
+   * WARNING: Loads up to 100,000 rows per namespace into memory.
+   * For users with many namespaces or large memory stores (>50,000 total),
+   * this method can exhaust Node.js heap. Override with a SQL COUNT query.
+   * Both SQLiteStorageAdapter and the Turso adapter already override this.
    */
   async getStats(userId: string): Promise<AdapterStats> {
     const namespaces = await this.listNamespaces(userId);

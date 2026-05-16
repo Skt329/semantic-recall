@@ -1,7 +1,12 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: [
+    'src/index.ts',
+    'src/workers/embedder.worker.ts',
+    'src/adapters/storage/turso.ts',
+    'src/adapters/storage/supabase.ts',
+  ],
   format: ['cjs', 'esm'],
   dts: true,
   splitting: false,

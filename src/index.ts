@@ -222,6 +222,8 @@ export class Memory extends EventEmitter {
           content: job.content, dedupThreshold: this.dedupThreshold,
           embedder: this.embedder, storage: this.storage,
           replayed: true, retried: job.attempts > 0,
+          ttl: job.ttl ?? undefined,
+          tags: job.tags ? JSON.parse(job.tags) : undefined,
         }, this);
       }
     } catch { /* best-effort */ }
@@ -236,6 +238,8 @@ export class Memory extends EventEmitter {
             jobId: job.id, userId: job.userId, namespace: job.namespace,
             content: job.content, dedupThreshold: this.dedupThreshold,
             embedder: this.embedder, storage: this.storage, retried: true,
+            ttl: job.ttl ?? undefined,
+            tags: job.tags ? JSON.parse(job.tags) : undefined,
           }, this);
         }
       } catch { /* best-effort */ }
@@ -538,6 +542,8 @@ export class Memory extends EventEmitter {
         jobId: job.id, userId: job.userId, namespace: job.namespace,
         content: job.content, dedupThreshold: this.dedupThreshold,
         embedder: this.embedder, storage: this.storage, retried: true,
+        ttl: job.ttl ?? undefined,
+        tags: job.tags ? JSON.parse(job.tags) : undefined,
       }, this);
     }
   }

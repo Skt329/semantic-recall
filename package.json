@@ -16,6 +16,26 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./adapters/storage/turso": {
+      "import": {
+        "types": "./dist/adapters/storage/turso.d.ts",
+        "default": "./dist/adapters/storage/turso.js"
+      },
+      "require": {
+        "types": "./dist/adapters/storage/turso.d.cts",
+        "default": "./dist/adapters/storage/turso.cjs"
+      }
+    },
+    "./adapters/storage/supabase": {
+      "import": {
+        "types": "./dist/adapters/storage/supabase.d.ts",
+        "default": "./dist/adapters/storage/supabase.js"
+      },
+      "require": {
+        "types": "./dist/adapters/storage/supabase.d.cts",
+        "default": "./dist/adapters/storage/supabase.cjs"
+      }
     }
   },
   "files": [
