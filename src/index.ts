@@ -290,16 +290,15 @@ export class Memory extends EventEmitter {
   ): Promise<BatchRememberResult> {
     await this.ensureInitialized();
 
-    const results = await Promise.allSettled(
-      texts.map(text => this.rememberAndWait(text, options)),
-    );
-
+    // Sequential execution: each insert completes before the next starts,
+    // so cross-store dedup naturally catches intra-batch duplicates.
     let saved = 0, duplicates = 0, errors = 0;
-    for (const r of results) {
-      if (r.status === 'fulfilled') {
-        if (r.value.saved) saved++;
-        if (r.value.duplicate) duplicates++;
-      } else {
+    for (const text of texts) {
+      try {
+        const result = await this.rememberAndWait(text, options);
+        if (result.saved) saved++;
+        if (result.duplicate) duplicates++;
+      } catch {
         errors++;
       }
     }
@@ -363,6 +362,8 @@ export class Memory extends EventEmitter {
    */
   async update(memoryId: number, newContent: string, tags?: string[]): Promise<void> {
     await this.ensureInitialized();
+    const existing = await this.storage.getMemoryById(memoryId);
+    if (!existing) throw new Error(`[semantic-recall] Memory ${memoryId} not found.`);
     const embedding = await this.embedder(newContent);
     const params: UpdateMemoryParams = { content: newContent, embedding };
     if (tags !== undefined) params.tags = tags;
@@ -435,11 +436,18 @@ export class Memory extends EventEmitter {
   // ─── Public API: Import/Export ─────────────────────────────────────────
 
   /**
-   * Export all memories for this user as a portable JSON structure.
+   * Export memories for this user as a portable JSON structure.
+   * Optionally filter to a single namespace.
    */
-  async export(): Promise<ExportData> {
+  async export(options?: { namespace?: string }): Promise<ExportData> {
     await this.ensureInitialized();
-    const allMemories = await this.storage.getAllMemories(this.userId);
+
+    let allMemories;
+    if (options?.namespace) {
+      allMemories = await this.storage.listMemories(this.userId, options.namespace, RELATED_HARD_CAP);
+    } else {
+      allMemories = await this.storage.getAllMemories(this.userId);
+    }
 
     return {
       version: 1,
@@ -467,18 +475,16 @@ export class Memory extends EventEmitter {
       throw new Error(`[semantic-recall] Unsupported export version: ${data.version}`);
     }
 
-    // Dimension validation — check against first existing memory
+    // Dimension validation — embed a test string to compare against import data.
+    // This works even on an empty database (unlike checking existing memories).
     if (data.memories.length > 0) {
-      const existing = await this.storage.listMemories(this.userId, this.namespace, 1);
-      if (existing.length > 0) {
-        const existingDim = parseEmbedding(existing[0]!.embedding).length;
-        const importDim = data.memories[0]!.embedding.length;
-        if (existingDim !== importDim) {
-          throw new Error(
-            `[semantic-recall] Dimension mismatch: existing memories have ${existingDim} dimensions ` +
-            `but imported data has ${importDim}. Cannot mix embedding models.`
-          );
-        }
+      const testEmbedding = await this.embedder('dimension check');
+      const importDim = data.memories[0]!.embedding.length;
+      if (testEmbedding.length !== importDim) {
+        throw new Error(
+          `[semantic-recall] Dimension mismatch: current embedder produces ${testEmbedding.length} dimensions ` +
+          `but imported data has ${importDim}. Cannot mix embedding models.`
+        );
       }
     }
 
@@ -551,6 +557,17 @@ export class Memory extends EventEmitter {
       this.remember(fact.trim(), options);
     }
   }
+
+  // ─── Aliases (bound for safe destructuring) ──────────────────────────
+
+  /** Alias for `recall()` — semantic search returning content strings. */
+  readonly search = (query: string, options?: RecallOptions) => this.recall(query, options);
+
+  /** Alias for `recallDetailed()` — semantic search with scores and metadata. */
+  readonly searchDetailed = (query: string, options?: RecallOptions) => this.recallDetailed(query, options);
+
+  /** Alias for `recallDetailed()` — search with similarity sources. */
+  readonly recallWithSources = (query: string, options?: RecallOptions) => this.recallDetailed(query, options);
 
   // ─── Lifecycle ────────────────────────────────────────────────────────
 

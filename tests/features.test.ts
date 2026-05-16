@@ -101,10 +101,12 @@ describe('Memory — rememberMany()', () => {
       embedder: createMockEmbedder(), retryIntervalMs: 60_000,
     });
 
+    // Texts must start with different characters and have different lengths
+    // to produce low cosine similarity with the charCode mock embedder
     const result = await memory.rememberMany([
-      'user likes apples',
-      'user likes bananas',
-      'user likes cherries',
+      'AAAA the capital of France is Paris',
+      '9999 quantum physics explains duality',
+      'zzzz zebras have stripes on the plains of Africa near the equator region',
     ]);
 
     expect(result.total).toBe(3);
@@ -330,13 +332,12 @@ describe('Memory — export/import', () => {
     expect(list.length).toBe(2);
   });
 
-  it('should reject import with dimension mismatch', async () => {
+  it('should reject import with dimension mismatch (empty DB)', async () => {
+    // No pre-inserted memories — the check uses the embedder directly
     const memory = createMemory({
       userId: 'u1', dbPath: testDbPath('import-dim'),
       embedder: createMockEmbedder(384), retryIntervalMs: 60_000,
     });
-
-    await memory.rememberAndWait('existing fact');
 
     const badData: ExportData = {
       version: 1,
@@ -345,7 +346,7 @@ describe('Memory — export/import', () => {
       memories: [{
         content: 'foreign fact',
         namespace: 'default',
-        embedding: [0.1, 0.2], // wrong dimensions
+        embedding: [0.1, 0.2], // wrong dimensions (2 vs 384)
         createdAt: new Date().toISOString(),
         expiresAt: null,
         tags: [],
@@ -405,5 +406,102 @@ describe('Memory — Custom adapter rejection', () => {
       storage: { init: () => {} } as any,
       embedder: createMockEmbedder(),
     })).toThrow('missing');
+  });
+});
+
+// ─── update() existence check ───────────────────────────────────────────────
+
+describe('Memory — update() existence check', () => {
+  it('should throw on non-existent memory ID', async () => {
+    const memory = createMemory({
+      userId: 'u1', dbPath: testDbPath('update-404'),
+      embedder: createMockEmbedder(), retryIntervalMs: 60_000,
+    });
+
+    await expect(memory.update(999999, 'new content')).rejects.toThrow('not found');
+  });
+});
+
+// ─── export() namespace filter ──────────────────────────────────────────────
+
+describe('Memory — export() namespace filter', () => {
+  it('should export only the specified namespace', async () => {
+    const memory = createMemory({
+      userId: 'u1', dbPath: testDbPath('export-ns'),
+      embedder: createMockEmbedder(), retryIntervalMs: 60_000,
+    });
+
+    await memory.rememberAndWait('fact in default');
+    await memory.rememberAndWait('fact in work', { namespace: 'work' });
+
+    const all = await memory.export();
+    expect(all.memories.length).toBe(2);
+
+    const workOnly = await memory.export({ namespace: 'work' });
+    expect(workOnly.memories.length).toBe(1);
+    expect(workOnly.memories[0]!.content).toBe('fact in work');
+  });
+});
+
+// ─── Aliases ────────────────────────────────────────────────────────────────
+
+describe('Memory — search aliases', () => {
+  it('search() should work as alias for recall()', async () => {
+    const memory = createMemory({
+      userId: 'u1', dbPath: testDbPath('alias-search'),
+      embedder: createMockEmbedder(), retryIntervalMs: 60_000,
+      recallThreshold: 0.01,
+    });
+
+    await memory.rememberAndWait('user likes cats');
+    const results = await memory.search('cats');
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it('searchDetailed() should work as alias for recallDetailed()', async () => {
+    const memory = createMemory({
+      userId: 'u1', dbPath: testDbPath('alias-detailed'),
+      embedder: createMockEmbedder(), retryIntervalMs: 60_000,
+      recallThreshold: 0.01,
+    });
+
+    await memory.rememberAndWait('user likes dogs');
+    const results = await memory.searchDetailed('dogs');
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]!.similarity).toBeDefined();
+  });
+
+  it('search alias should work after destructuring', async () => {
+    const memory = createMemory({
+      userId: 'u1', dbPath: testDbPath('alias-destruct'),
+      embedder: createMockEmbedder(), retryIntervalMs: 60_000,
+      recallThreshold: 0.01,
+    });
+
+    await memory.rememberAndWait('user likes fish');
+    const { search } = memory;
+    const results = await search('fish');
+    expect(results.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── rememberMany intra-batch dedup ─────────────────────────────────────────
+
+describe('Memory — rememberMany intra-batch dedup', () => {
+  it('should deduplicate near-identical texts within a batch', async () => {
+    const memory = createMemory({
+      userId: 'u1', dbPath: testDbPath('intra-dedup'),
+      embedder: createMockEmbedder(), retryIntervalMs: 60_000,
+    });
+
+    // Two identical texts in the same batch
+    const result = await memory.rememberMany([
+      'the capital of France is Paris',
+      'the capital of France is Paris',
+    ]);
+
+    expect(result.total).toBe(2);
+    expect(result.saved).toBe(1);
+    expect(result.duplicates).toBe(1);
   });
 });

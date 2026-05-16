@@ -46,6 +46,17 @@ function createMockEmbedder(dimensions = 384): EmbedderFunction {
   };
 }
 
+beforeEach(() => {
+  if (!fs.existsSync(TEST_DB_DIR)) {
+    fs.mkdirSync(TEST_DB_DIR, { recursive: true });
+  }
+});
+afterEach(() => {
+  while (activeInstances.length > 0) {
+    try { activeInstances.pop()!.destroy(); } catch {}
+  }
+});
+
 /** Embedder that returns very similar vectors for similar inputs. */
 function createSemanticMockEmbedder(): EmbedderFunction {
   const knownVectors: Record<string, number[]> = {};
