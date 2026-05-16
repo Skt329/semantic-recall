@@ -24,7 +24,7 @@ import { createLocalEmbedder, terminateLocalEmbedder } from './adapters/embedder
 import { createOpenAIEmbedder } from './adapters/embedder/openai.js';
 import { createCustomEmbedder } from './adapters/embedder/custom.js';
 import { validateCustomAdapter } from './adapters/storage/custom.js';
-import { parseTTL, parseEmbedding, cosineSimilarity, nowISO, parseTags } from './utils.js';
+import { parseTTL, parseEmbedding, cosineSimilarity, nowISO, parseTags, generateExpiresAt } from './utils.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -205,7 +205,7 @@ export class Memory extends EventEmitter {
       this.initialized = true;
     } catch (err) {
       this.initError = err instanceof Error ? err : new Error(String(err));
-      console.error('[semantic-recall] Initialization error:', err);
+      console.error('[semantic-recall] Initialization error:', err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -220,6 +220,10 @@ export class Memory extends EventEmitter {
   private async replayPendingJobs(): Promise<void> {
     try {
       const retryable = await this.storage.getRetryable(this.userId);
+      // Pre-mark all as processing to prevent scheduler from re-fetching
+      for (const job of retryable) {
+        await this.storage.markProcessing(job.id);
+      }
       for (const job of retryable) {
         void injectBackground({
           jobId: job.id, userId: job.userId, namespace: job.namespace,
@@ -228,6 +232,7 @@ export class Memory extends EventEmitter {
           replayed: true, retried: job.attempts > 0,
           ttl: job.ttl ?? undefined,
           tags: job.tags ? JSON.parse(job.tags) : undefined,
+          skipMarkProcessing: true,
         }, this);
       }
     } catch { /* best-effort */ }
@@ -252,6 +257,8 @@ export class Memory extends EventEmitter {
             skipMarkProcessing: true,
           }, this);
         }
+        // Prune expired memories periodically (cheaper than per-inject)
+        await this.storage.pruneExpired(this.userId);
       } catch { /* best-effort */ }
     }, this.retryIntervalMs);
 
@@ -280,13 +287,15 @@ export class Memory extends EventEmitter {
       try {
         await this.ensureInitialized();
         const namespace = options?.namespace ?? this.namespace;
+        const ttl = this.resolveTtl(options);
+        const expiresAt = generateExpiresAt(ttl);
         const jobId = await this.storage.enqueue({
           userId: this.userId, namespace, content: text, maxAttempts: this.maxAttempts,
-          ttl: this.resolveTtl(options), tags: options?.tags,
+          ttl, tags: options?.tags, expiresAt,
         });
         void injectBackground({
           jobId, userId: this.userId, namespace, content: text,
-          ttl: this.resolveTtl(options), dedupThreshold: this.dedupThreshold,
+          ttl, expiresAt, dedupThreshold: this.dedupThreshold,
           embedder: this.embedder, storage: this.storage, tags: options?.tags,
         }, this);
       } catch { /* never throw */ }
@@ -296,13 +305,15 @@ export class Memory extends EventEmitter {
   async rememberAndWait(text: string, options?: RememberOptions): Promise<RememberResult> {
     await this.ensureInitialized();
     const namespace = options?.namespace ?? this.namespace;
+    const ttl = this.resolveTtl(options);
+    const expiresAt = generateExpiresAt(ttl);
     const jobId = await this.storage.enqueue({
       userId: this.userId, namespace, content: text, maxAttempts: this.maxAttempts,
-      ttl: this.resolveTtl(options), tags: options?.tags,
+      ttl, tags: options?.tags, expiresAt,
     });
     return injectBackground({
       jobId, userId: this.userId, namespace, content: text,
-      ttl: this.resolveTtl(options), dedupThreshold: this.dedupThreshold,
+      ttl, expiresAt, dedupThreshold: this.dedupThreshold,
       embedder: this.embedder, storage: this.storage, tags: options?.tags,
     }, this);
   }
@@ -366,6 +377,11 @@ export class Memory extends EventEmitter {
 
   async forget(memoryId: number): Promise<void> {
     await this.ensureInitialized();
+    const existing = await this.storage.getMemoryById(memoryId);
+    if (!existing) throw new Error(`[semantic-recall] Memory ${memoryId} not found.`);
+    if (existing.user_id !== this.userId) {
+      throw new Error(`[semantic-recall] Memory ${memoryId} does not belong to this user.`);
+    }
     await this.storage.deleteMemory(memoryId);
   }
 
@@ -394,6 +410,9 @@ export class Memory extends EventEmitter {
     await this.ensureInitialized();
     const existing = await this.storage.getMemoryById(memoryId);
     if (!existing) throw new Error(`[semantic-recall] Memory ${memoryId} not found.`);
+    if (existing.user_id !== this.userId) {
+      throw new Error(`[semantic-recall] Memory ${memoryId} does not belong to this user.`);
+    }
     const embedding = await this.embedder(newContent);
     const params: UpdateMemoryParams = { content: newContent, embedding };
     if (tags !== undefined) params.tags = tags;

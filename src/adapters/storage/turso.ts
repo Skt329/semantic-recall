@@ -74,13 +74,13 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
 
   function mapJobRow(row: Record<string, unknown>): MemoryJob {
     return {
-      id: row['id'] as number,
+      id: Number(row['id']),
       userId: row['user_id'] as string,
       namespace: row['namespace'] as string,
       content: row['content'] as string,
       status: row['status'] as JobStatus,
-      attempts: row['attempts'] as number,
-      maxAttempts: row['max_attempts'] as number,
+      attempts: Number(row['attempts']),
+      maxAttempts: Number(row['max_attempts']),
       lastError: (row['last_error'] as string) ?? null,
       createdAt: row['created_at'] as string,
       nextRetryAt: (row['next_retry_at'] as string) ?? null,
@@ -151,6 +151,12 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
       await migrateAddColumn('memories', 'recall_count', 'ALTER TABLE memories ADD COLUMN recall_count INTEGER DEFAULT 0');
       await migrateAddColumn('pending_memories', 'ttl', 'ALTER TABLE pending_memories ADD COLUMN ttl TEXT');
       await migrateAddColumn('pending_memories', 'tags', "ALTER TABLE pending_memories ADD COLUMN tags TEXT DEFAULT '[]'");
+
+      // Partial index for faster TTL pruning
+      await db.execute({
+        sql: `CREATE INDEX IF NOT EXISTS idx_memories_expires ON memories(expires_at) WHERE expires_at IS NOT NULL`,
+        args: [],
+      });
     },
 
     async insertMemory(params: InsertMemoryParams): Promise<number> {
@@ -187,6 +193,11 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
       if (params.before) {
         sql += ` AND created_at <= ?`;
         args.push(params.before);
+      }
+
+      if (params.limit) {
+        sql += ` ORDER BY created_at DESC LIMIT ?`;
+        args.push(params.limit);
       }
 
       const result = await db.execute({ sql, args });
@@ -354,25 +365,20 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
      * For atomic batch imports, use `Memory.import()` instead.
      */
     async bulkInsertMemories(memories: InsertMemoryParams[]): Promise<number[]> {
+      if (memories.length === 0) return [];
       const db = await getClient();
-      const ids: number[] = [];
-      for (const mem of memories) {
-        const result = await db.execute({
-          sql: `INSERT INTO memories (user_id, namespace, content, embedding, created_at, expires_at, tags)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          args: [
-            mem.userId,
-            mem.namespace,
-            mem.content,
-            JSON.stringify(mem.embedding),
-            mem.createdAt,
-            mem.expiresAt,
-            JSON.stringify(mem.tags ?? []),
-          ],
-        });
-        ids.push(Number(result.lastInsertRowid));
-      }
-      return ids;
+      // Use batch() for atomicity — all-or-nothing
+      const stmts = memories.map(mem => ({
+        sql: `INSERT INTO memories (user_id, namespace, content, embedding, created_at, expires_at, tags)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          mem.userId, mem.namespace, mem.content,
+          JSON.stringify(mem.embedding), mem.createdAt,
+          mem.expiresAt, JSON.stringify(mem.tags ?? []),
+        ],
+      }));
+      const results = await db.batch(stmts) as Array<{ lastInsertRowid?: bigint | number }>;
+      return results.map(r => Number(r.lastInsertRowid ?? 0));
     },
 
     // ─── Queue Operations ─────────────────────────────────────────────

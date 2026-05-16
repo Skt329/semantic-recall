@@ -43,10 +43,19 @@ describe('parseEmbedding', () => {
 });
 
 describe('computeBackoffMs', () => {
-  it('doubles each attempt', () => {
-    expect(computeBackoffMs(1)).toBe(2000);
-    expect(computeBackoffMs(2)).toBe(4000);
-    expect(computeBackoffMs(3)).toBe(8000);
+  it('doubles each attempt (with ±25% jitter)', () => {
+    // With ±25% jitter, 2000ms base → [1500, 2500]
+    const b1 = computeBackoffMs(1);
+    expect(b1).toBeGreaterThanOrEqual(1500);
+    expect(b1).toBeLessThanOrEqual(2500);
+
+    const b2 = computeBackoffMs(2);
+    expect(b2).toBeGreaterThanOrEqual(3000);
+    expect(b2).toBeLessThanOrEqual(5000);
+
+    const b3 = computeBackoffMs(3);
+    expect(b3).toBeGreaterThanOrEqual(6000);
+    expect(b3).toBeLessThanOrEqual(10000);
   });
 });
 

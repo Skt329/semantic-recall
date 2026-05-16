@@ -2,7 +2,7 @@
  * semantic-recall — Injection Pipeline
  *
  * Orchestrates the full background memory injection flow:
- *   mark processing → embed → dimension check → dedup → TTL → prune → insert → mark done
+ *   mark processing → embed → dimension check → dedup → insert → mark done
  *
  * On failure: increment attempts, compute backoff, emit retry/dead events.
  * This pipeline is designed to never throw — all errors are handled internally
@@ -43,6 +43,7 @@ export async function injectBackground(
     namespace,
     content,
     ttl,
+    expiresAt: preComputedExpiresAt,
     dedupThreshold,
     embedder,
     storage,
@@ -74,13 +75,10 @@ export async function injectBackground(
       return { saved: false, duplicate: true };
     }
 
-    // Step 5: Compute TTL / expiry
-    const expiresAt = generateExpiresAt(ttl);
+    // Step 5: Use pre-computed expiry from enqueue time, fallback for backward compat
+    const expiresAt = preComputedExpiresAt !== undefined ? preComputedExpiresAt : generateExpiresAt(ttl);
 
-    // Step 6: Prune expired memories for this user
-    await storage.pruneExpired(userId);
-
-    // Step 7: Insert into memories table
+    // Step 6: Insert into memories table
     await storage.insertMemory({
       userId,
       namespace,
@@ -91,10 +89,10 @@ export async function injectBackground(
       tags: params.tags,
     });
 
-    // Step 8: Mark job done
+    // Step 7: Mark job done
     await storage.markDone(jobId);
 
-    // Step 9: Emit success event
+    // Step 8: Emit success event
     const savedEvent: MemorySavedEvent = {
       jobId,
       content,
@@ -141,9 +139,10 @@ export async function injectBackground(
         };
         emitter.emit('memory:retry', retryEvent);
       }
-    } catch {
-      // If even the failure handling fails, swallow silently.
-      // The developer can discover this via getDeadJobs() later.
+    } catch (innerErr) {
+      // Failure handling itself failed — log for diagnostics.
+      // The developer can discover the original job via getDeadJobs().
+      console.warn('[semantic-recall] Error during failure handling:', innerErr);
     }
 
     return { saved: false, duplicate: false };

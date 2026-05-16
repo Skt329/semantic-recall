@@ -103,13 +103,13 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
 
   function mapJobRow(row: Record<string, unknown>): MemoryJob {
     return {
-      id: row['id'] as number,
+      id: Number(row['id']),
       userId: row['user_id'] as string,
       namespace: row['namespace'] as string,
       content: row['content'] as string,
       status: row['status'] as JobStatus,
-      attempts: row['attempts'] as number,
-      maxAttempts: row['max_attempts'] as number,
+      attempts: Number(row['attempts']),
+      maxAttempts: Number(row['max_attempts']),
       lastError: (row['last_error'] as string) ?? null,
       createdAt: row['created_at'] as string,
       nextRetryAt: (row['next_retry_at'] as string) ?? null,
@@ -259,6 +259,10 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       }
       if (params.before) {
         query = query.lte('created_at', params.before);
+      }
+
+      if (params.limit) {
+        query = query.order('created_at', { ascending: false }).limit(params.limit);
       }
 
       const result = await query as { data?: RawMemoryRow[]; error?: { message: string } };

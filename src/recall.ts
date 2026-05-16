@@ -59,6 +59,10 @@ export async function recallMemories(params: RecallParams): Promise<MemoryResult
   }
 
   // Step 3: Apply tag filters (AND logic — memory must have ALL specified tags)
+  // Tags are stored as JSON strings in the DB, so SQL-side filtering would
+  // require fragile LIKE/JSON operators. JS-side filtering is correct and
+  // safe here because candidates are already scoped to userId+namespace.
+  // Future optimization: a memory_tags join table for SQL-native filtering.
   if (tags && tags.length > 0) {
     candidates = candidates.filter(row => {
       const rowTags = parseTags(row.tags);

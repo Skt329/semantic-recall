@@ -66,6 +66,9 @@ export function createOpenAIEmbedder(
     if (!embedding || embedding.length === 0) {
       throw new Error('[semantic-recall] OpenAI returned empty embedding');
     }
+    if (!embedding.every(v => Number.isFinite(v))) {
+      throw new Error('[semantic-recall] OpenAI returned invalid embedding values (NaN/Infinity)');
+    }
 
     return embedding;
   };

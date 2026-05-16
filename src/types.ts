@@ -30,6 +30,8 @@ export interface SearchParams {
   after?: string;
   /** ISO 8601 — inclusive upper bound for created_at filtering. */
   before?: string;
+  /** Maximum number of rows to return. When omitted, returns all matches. */
+  limit?: number;
 }
 
 /**
@@ -57,6 +59,8 @@ export interface NewJob {
   maxAttempts: number;
   ttl?: string | number;
   tags?: string[];
+  /** Pre-computed expiry timestamp (ISO 8601). Computed at enqueue time so TTL is relative to the user's original remember() call, not injection time. */
+  expiresAt?: string | null;
 }
 
 /**
@@ -270,9 +274,6 @@ export interface MemoryOptions {
   retryIntervalMs?: number;
 
   // ─── Auto-extraction ─────────────────────────────────────────────────
-
-  /** If true, extractAndRemember is available. Default: false. */
-  autoExtract?: boolean;
 }
 
 /**
@@ -444,6 +445,8 @@ export interface InjectParams {
   namespace: string;
   content: string;
   ttl?: string | number;
+  /** Pre-computed expiry timestamp. When provided, inject uses this instead of computing from ttl. */
+  expiresAt?: string | null;
   dedupThreshold: number;
   embedder: EmbedderFunction;
   storage: StorageAdapter;

@@ -113,6 +113,12 @@ export class SQLiteStorageAdapter implements StorageAdapter {
     this.migrateAddColumn('memories', 'recall_count', MIGRATION_ADD_RECALL_COUNT);
     this.migrateAddColumn('pending_memories', 'ttl', MIGRATION_ADD_PENDING_TTL);
     this.migrateAddColumn('pending_memories', 'tags', MIGRATION_ADD_PENDING_TAGS);
+
+    // Partial index for faster TTL pruning — only indexes rows with a non-NULL expiry
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_memories_expires
+      ON memories(expires_at) WHERE expires_at IS NOT NULL;
+    `);
   }
 
   /** Safe column addition — no-op if column already exists. */
@@ -164,6 +170,11 @@ export class SQLiteStorageAdapter implements StorageAdapter {
     if (params.before) {
       sql += ` AND created_at <= ?`;
       args.push(params.before);
+    }
+
+    if (params.limit) {
+      sql += ` ORDER BY created_at DESC LIMIT ?`;
+      args.push(params.limit);
     }
 
     return this.db.prepare(sql).all(...args) as RawMemoryRow[];

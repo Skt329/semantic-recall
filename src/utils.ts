@@ -93,7 +93,13 @@ export function parseTTL(ttl: string | number): number {
     throw new Error(`Unknown TTL unit: '${unit}'`);
   }
 
-  return value * multiplier;
+  const result = value * multiplier;
+  if (result > MAX_TTL_MS) {
+    throw new Error(
+      `[semantic-recall] TTL value '${ttl}' exceeds the maximum of 10 years.`
+    );
+  }
+  return result;
 }
 
 /**
@@ -147,9 +153,13 @@ export function parseEmbedding(json: string): number[] {
  * Default maxAttempts is 3, so attempts never reach this cap in typical use.
  */
 const MAX_BACKOFF_MS = 3_600_000; // 1 hour
+const MAX_TTL_MS = 10 * 365 * 24 * 60 * 60 * 1000; // 10 years
 
 export function computeBackoffMs(attempts: number): number {
-  return Math.min(Math.pow(2, attempts) * 1000, MAX_BACKOFF_MS);
+  const base = Math.min(Math.pow(2, attempts) * 1000, MAX_BACKOFF_MS);
+  // ±25% jitter to prevent thundering herd when multiple instances restart
+  const jitter = base * 0.25 * (Math.random() * 2 - 1);
+  return Math.max(1000, Math.round(base + jitter));
 }
 
 /**

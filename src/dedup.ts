@@ -33,7 +33,10 @@ export async function checkAndDedup(params: {
   storage: StorageAdapter;
 }): Promise<boolean> {
   const { vector, userId, namespace, threshold, storage } = params;
-  const existingRows = await storage.searchMemories({ userId, namespace });
+  // Cap at 1000 most recent to prevent heap exhaustion on large stores.
+  // Duplicates are most likely among recent memories.
+  const DEDUP_SCAN_LIMIT = 1000;
+  const existingRows = await storage.searchMemories({ userId, namespace, limit: DEDUP_SCAN_LIMIT });
 
   if (existingRows.length === 0) return false;
 
