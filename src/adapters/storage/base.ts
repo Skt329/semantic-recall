@@ -43,9 +43,9 @@ export abstract class BaseStorageAdapter implements StorageAdapter {
   abstract markProcessing(jobId: number): Promise<void>;
   abstract markDone(jobId: number): Promise<void>;
   abstract markFailed(jobId: number, error: string): Promise<void>;
-  abstract getRetryable(): Promise<MemoryJob[]>;
+  abstract getRetryable(userId?: string): Promise<MemoryJob[]>;
   abstract getDeadJobs(userId: string): Promise<MemoryJob[]>;
-  abstract resetStaleProcessing(): Promise<void>;
+  abstract resetStaleProcessing(userId?: string): Promise<void>;
   abstract cleanupDoneJobs(olderThanMs: number): Promise<number>;
   abstract retryDeadJob(jobId: number): Promise<void>;
   abstract close(): void;

@@ -114,7 +114,7 @@ export async function injectBackground(
       await storage.markFailed(jobId, errorMessage);
 
       // Re-read the job to get updated attempt count
-      const retryable = await storage.getRetryable();
+      const retryable = await storage.getRetryable(userId);
       const deadJobs = await storage.getDeadJobs(userId);
 
       // Check if this job is now dead

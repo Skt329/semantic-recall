@@ -20,7 +20,7 @@ import type {
 import { injectBackground } from './inject.js';
 import { recallMemories, recallContents } from './recall.js';
 import { SQLiteStorageAdapter } from './adapters/storage/sqlite.js';
-import { createLocalEmbedder } from './adapters/embedder/local.js';
+import { createLocalEmbedder, terminateLocalEmbedder } from './adapters/embedder/local.js';
 import { createOpenAIEmbedder } from './adapters/embedder/openai.js';
 import { createCustomEmbedder } from './adapters/embedder/custom.js';
 import { validateCustomAdapter } from './adapters/storage/custom.js';
@@ -72,6 +72,7 @@ export class Memory extends EventEmitter {
   private initialized: boolean = false;
   private initPromise: Promise<void>;
   private initError: Error | null = null;
+  private readonly usingLocalEmbedder: boolean;
 
   constructor(options: MemoryOptions) {
     super();
@@ -88,6 +89,7 @@ export class Memory extends EventEmitter {
     this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.retryIntervalMs = options.retryIntervalMs ?? DEFAULT_RETRY_INTERVAL_MS;
     this.defaultTtl = options.defaultTtl;
+    this.usingLocalEmbedder = (options.embedder ?? 'local') === 'local';
 
     this.storage = this.resolveStorage(options);
     this.embedder = this.resolveEmbedder(options);
@@ -197,7 +199,7 @@ export class Memory extends EventEmitter {
   private async initialize(): Promise<void> {
     try {
       await this.storage.init();
-      await this.storage.resetStaleProcessing();
+      await this.storage.resetStaleProcessing(this.userId);
       await this.replayPendingJobs();
       this.startRetryScheduler();
       this.initialized = true;
@@ -217,7 +219,7 @@ export class Memory extends EventEmitter {
 
   private async replayPendingJobs(): Promise<void> {
     try {
-      const retryable = await this.storage.getRetryable();
+      const retryable = await this.storage.getRetryable(this.userId);
       for (const job of retryable) {
         void injectBackground({
           jobId: job.id, userId: job.userId, namespace: job.namespace,
@@ -234,7 +236,7 @@ export class Memory extends EventEmitter {
   private startRetryScheduler(): void {
     this.retryTimer = setInterval(async () => {
       try {
-        const retryable = await this.storage.getRetryable();
+        const retryable = await this.storage.getRetryable(this.userId);
         // Pre-mark all as processing BEFORE dispatching to prevent
         // the next scheduler tick from re-fetching the same jobs.
         for (const job of retryable) {
@@ -543,7 +545,7 @@ export class Memory extends EventEmitter {
   async retryDead(jobId: number): Promise<void> {
     await this.ensureInitialized();
     await this.storage.retryDeadJob(jobId);
-    const retryable = await this.storage.getRetryable();
+    const retryable = await this.storage.getRetryable(this.userId);
     const job = retryable.find(j => j.id === jobId);
     if (job) {
       void injectBackground({
@@ -622,6 +624,9 @@ export class Memory extends EventEmitter {
       clearInterval(this.retryTimer);
       this.retryTimer = null;
     }
+    if (this.usingLocalEmbedder) {
+      terminateLocalEmbedder();
+    }
     try { this.storage.close(); } catch { /* best-effort */ }
     this.removeAllListeners();
   }
@@ -650,7 +655,7 @@ export type {
 
 export { BaseStorageAdapter } from './adapters/storage/base.js';
 export { SQLiteStorageAdapter } from './adapters/storage/sqlite.js';
-export { createLocalEmbedder } from './adapters/embedder/local.js';
+export { createLocalEmbedder, terminateLocalEmbedder } from './adapters/embedder/local.js';
 export { createOpenAIEmbedder } from './adapters/embedder/openai.js';
 export { createCustomEmbedder } from './adapters/embedder/custom.js';
 export { cosineSimilarity, parseTTL } from './utils.js';

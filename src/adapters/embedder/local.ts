@@ -150,3 +150,22 @@ export function createLocalEmbedder(modelName?: string): EmbedderFunction {
     });
   };
 }
+
+/**
+ * Terminate the shared embedding worker thread.
+ *
+ * Call this during graceful shutdown to release the worker's V8 isolate
+ * and the ~25MB model from memory. The worker is automatically respawned
+ * on the next embed call, so calling this is safe even if another
+ * Memory instance is still active.
+ *
+ * `Memory.destroy()` calls this automatically when the local embedder is in use.
+ */
+export function terminateLocalEmbedder(): void {
+  if (sharedWorker) {
+    sharedWorker.terminate().catch(() => {});
+    rejectAllPending('Embedder terminated via terminateLocalEmbedder()');
+    sharedWorker = null;
+    workerModelName = null;
+  }
+}

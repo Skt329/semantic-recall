@@ -398,15 +398,22 @@ export class SQLiteStorageAdapter implements StorageAdapter {
     `).run(newStatus, newAttempts, error, nextRetryAt, jobId);
   }
 
-  async getRetryable(): Promise<MemoryJob[]> {
+  async getRetryable(userId?: string): Promise<MemoryJob[]> {
     const now = nowISO();
-    const rows = this.db.prepare(`
+    let sql = `
       SELECT id, user_id, namespace, content, status, attempts,
              max_attempts, last_error, created_at, next_retry_at, ttl, tags
       FROM pending_memories
       WHERE status IN ('pending', 'failed')
-        AND (next_retry_at IS NULL OR next_retry_at <= ?)
-    `).all(now) as Array<{
+        AND (next_retry_at IS NULL OR next_retry_at <= ?)`;
+    const args: unknown[] = [now];
+
+    if (userId) {
+      sql += ` AND user_id = ?`;
+      args.push(userId);
+    }
+
+    const rows = this.db.prepare(sql).all(...args) as Array<{
       id: number;
       user_id: string;
       namespace: string;
@@ -474,11 +481,17 @@ export class SQLiteStorageAdapter implements StorageAdapter {
     }));
   }
 
-  async resetStaleProcessing(): Promise<void> {
+  async resetStaleProcessing(userId?: string): Promise<void> {
     // Jobs stuck in 'processing' from a crashed session → reset to 'pending'
-    this.db.prepare(
-      "UPDATE pending_memories SET status = 'pending' WHERE status = 'processing'"
-    ).run();
+    if (userId) {
+      this.db.prepare(
+        "UPDATE pending_memories SET status = 'pending' WHERE status = 'processing' AND user_id = ?"
+      ).run(userId);
+    } else {
+      this.db.prepare(
+        "UPDATE pending_memories SET status = 'pending' WHERE status = 'processing'"
+      ).run();
+    }
   }
 
   async cleanupDoneJobs(olderThanMs: number): Promise<number> {

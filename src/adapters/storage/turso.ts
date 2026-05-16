@@ -425,14 +425,19 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
       });
     },
 
-    async getRetryable(): Promise<MemoryJob[]> {
+    async getRetryable(userId?: string): Promise<MemoryJob[]> {
       const db = await getClient();
-      const result = await db.execute({
-        sql: `SELECT id, user_id, namespace, content, status, attempts, max_attempts, last_error, created_at, next_retry_at, ttl, tags
+      let sql = `SELECT id, user_id, namespace, content, status, attempts, max_attempts, last_error, created_at, next_retry_at, ttl, tags
               FROM pending_memories
-              WHERE status IN ('pending', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= ?)`,
-        args: [nowISO()],
-      });
+              WHERE status IN ('pending', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= ?)`;
+      const args: unknown[] = [nowISO()];
+
+      if (userId) {
+        sql += ` AND user_id = ?`;
+        args.push(userId);
+      }
+
+      const result = await db.execute({ sql, args });
       return (result.rows as unknown as Record<string, unknown>[]).map(mapJobRow);
     },
 
@@ -446,12 +451,19 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
       return (result.rows as unknown as Record<string, unknown>[]).map(mapJobRow);
     },
 
-    async resetStaleProcessing(): Promise<void> {
+    async resetStaleProcessing(userId?: string): Promise<void> {
       const db = await getClient();
-      await db.execute({
-        sql: "UPDATE pending_memories SET status = 'pending' WHERE status = 'processing'",
-        args: [],
-      });
+      if (userId) {
+        await db.execute({
+          sql: "UPDATE pending_memories SET status = 'pending' WHERE status = 'processing' AND user_id = ?",
+          args: [userId],
+        });
+      } else {
+        await db.execute({
+          sql: "UPDATE pending_memories SET status = 'pending' WHERE status = 'processing'",
+          args: [],
+        });
+      }
     },
 
     async cleanupDoneJobs(olderThanMs: number): Promise<number> {

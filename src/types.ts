@@ -109,9 +109,9 @@ interface StorageAdapterV1 {
   markProcessing(jobId: number): Promise<void>;
   markDone(jobId: number): Promise<void>;
   markFailed(jobId: number, error: string): Promise<void>;
-  getRetryable(): Promise<MemoryJob[]>;
+  getRetryable(userId?: string): Promise<MemoryJob[]>;
   getDeadJobs(userId: string): Promise<MemoryJob[]>;
-  resetStaleProcessing(): Promise<void>;
+  resetStaleProcessing(userId?: string): Promise<void>;
   cleanupDoneJobs(olderThanMs: number): Promise<number>;
   retryDeadJob(jobId: number): Promise<void>;
   close(): void;

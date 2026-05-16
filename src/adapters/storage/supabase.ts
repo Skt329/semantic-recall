@@ -576,7 +576,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
         .eq('id', jobId);
     },
 
-    async getRetryable(): Promise<MemoryJob[]> {
+    async getRetryable(userId?: string): Promise<MemoryJob[]> {
       const db = await getClient();
       const now = nowISO();
 
@@ -595,10 +595,16 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
         `and(status.eq.failed,next_retry_at.is.null),` +
         `and(status.eq.failed,next_retry_at.lte.${now})`;
 
-      const result = await db
+      let query = db
         .from('pending_memories')
         .select('*')
-        .or(filter) as { data?: Record<string, unknown>[] };
+        .or(filter);
+
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const result = await query as { data?: Record<string, unknown>[] };
 
       return (result.data ?? []).map(mapJobRow);
     },
@@ -614,12 +620,18 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       return (result.data ?? []).map(mapJobRow);
     },
 
-    async resetStaleProcessing(): Promise<void> {
+    async resetStaleProcessing(userId?: string): Promise<void> {
       const db = await getClient();
-      await db
+      let query = db
         .from('pending_memories')
         .update({ status: 'pending' })
         .eq('status', 'processing');
+
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      await query;
     },
 
     /**
@@ -658,7 +670,8 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
           last_error: null,
           next_retry_at: null,
         })
-        .eq('id', jobId);
+        .eq('id', jobId)
+        .eq('status', 'dead');
     },
 
     close(): void {
