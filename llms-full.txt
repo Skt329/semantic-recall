@@ -42,16 +42,35 @@ const facts = await memory.recall("What should I recommend for dinner?")
 
 ## Full API
 
+### Core
+
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `memory.remember(text, opts?)` | `void` | Store a memory. Fire-and-forget, never throws. |
 | `memory.rememberAndWait(text, opts?)` | `Promise<RememberResult>` | Store and wait for confirmation. Returns `{ saved, duplicate }`. |
+| `memory.rememberMany(texts, opts?)` | `Promise<BatchRememberResult>` | Store multiple memories. Returns `{ total, saved, duplicates, errors }`. |
 | `memory.recall(query, opts?)` | `Promise<string[]>` | Semantic search. Returns content strings. |
 | `memory.recallDetailed(query, opts?)` | `Promise<MemoryResult[]>` | Like recall but with similarity scores + metadata. |
 | `memory.extractAndRemember(messages, opts?)` | `Promise<void>` | LLM-powered fact extraction from conversation messages. |
+
+### Memory Management
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `memory.update(id, text, tags?)` | `Promise<void>` | Update a memory in-place (re-embeds automatically). |
+| `memory.related(id, opts?)` | `Promise<MemoryResult[]>` | Find semantically related memories. |
 | `memory.forget(memoryId)` | `Promise<void>` | Delete a specific memory by ID. |
 | `memory.forgetAll(opts?)` | `Promise<void>` | Delete all memories for user + namespace. |
 | `memory.list(opts?)` | `Promise<MemoryResult[]>` | List all stored memories without semantic search. |
+| `memory.listNamespaces()` | `Promise<string[]>` | List distinct namespaces for this user. |
+
+### Observability & Data
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `memory.stats()` | `Promise<AdapterStats>` | Aggregate stats (counts, dates, most recalled). |
+| `memory.export()` | `Promise<ExportData>` | Export all memories as portable JSON. |
+| `memory.import(data)` | `Promise<{ imported }>` | Import memories with dimension validation. |
 | `memory.getDeadJobs()` | `Promise<MemoryJob[]>` | Inspect jobs that failed all retry attempts. |
 | `memory.retryDead(jobId)` | `Promise<void>` | Manually retry a dead job. |
 | `memory.cleanup(opts?)` | `Promise<{ deleted }>` | Prune old completed jobs from the queue. |
@@ -80,6 +99,7 @@ const memory = new Memory({
   dedupThreshold: 0.92,          // Cosine similarity threshold for dedup
   recallThreshold: 0.70,         // Minimum similarity to return in recall
   topK: 5,                       // Max results per recall()
+  defaultTtl: '30d',             // Applied to all memories unless overridden
 
   // Reliability
   maxAttempts: 3,
@@ -110,7 +130,7 @@ memory.on('memory:dead', ({ content, error }) => { ... })
 - **SQLite** (default): zero config, WAL mode, works on any filesystem
 - **Turso**: serverless/edge deployments — `npm install @libsql/client`
 - **Supabase**: Postgres at scale — `npm install @supabase/supabase-js`
-- **Custom**: implement the `StorageAdapter` interface for any backend
+- **Custom**: extend `BaseStorageAdapter` for compile-time enforcement of the 24-method contract
 
 ---
 
@@ -154,7 +174,10 @@ Supported providers: `openai`, `gemini`, `claude`, or any custom `LLMFunction`.
 | Semantic search | ✅ cosine similarity | ✅ | ✅ knowledge graph | ❌ keyword only |
 | Auto deduplication | ✅ | ✅ | ❌ | ❌ |
 | Crash recovery | ✅ persistent queue | ❌ | ❌ | ❌ |
-| TTL / auto-expiry | ✅ | ❌ | ❌ | ❌ |
+| TTL / auto-expiry | ✅ + defaultTtl | ❌ | ❌ | ❌ |
+| Tags & filtering | ✅ tag + date-range | ❌ | ❌ | ❌ |
+| Batch operations | ✅ rememberMany() | ❌ | ❌ | ❌ |
+| Export / Import | ✅ portable JSON | ❌ | ❌ | ❌ |
 | Multi-tenant | ✅ userId + namespace | ✅ | ✅ | ❌ |
 | Free & open-source | ✅ MIT forever | Freemium | Freemium | ✅ MIT |
 
@@ -165,9 +188,10 @@ Supported providers: `openai`, `gemini`, `claude`, or any custom `LLMFunction`.
 ```typescript
 import type {
   MemoryOptions, RememberOptions, RecallOptions,
-  MemoryResult, RememberResult, MemoryJob,
-  StorageAdapter, EmbedderFunction,
-  ConversationMessage, LLMFunction,
+  MemoryResult, RememberResult, BatchRememberResult, MemoryJob,
+  StorageAdapter, BaseStorageAdapter, AdapterStats, ExportData,
+  RelatedOptions, UpdateMemoryParams,
+  EmbedderFunction, ConversationMessage, LLMFunction,
   MemorySavedEvent, MemoryRetryEvent, MemoryDeadEvent,
 } from 'semantic-recall'
 ```

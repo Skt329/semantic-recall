@@ -84,10 +84,11 @@ semantic-recall/
 │   ├── recall.ts              # Semantic recall pipeline
 │   ├── adapters/
 │   │   ├── storage/
+│   │   │   ├── base.ts        # BaseStorageAdapter — abstract class for custom adapters
 │   │   │   ├── sqlite.ts      # SQLite adapter (default, WAL mode)
 │   │   │   ├── turso.ts       # Turso/LibSQL adapter
 │   │   │   ├── supabase.ts    # Supabase/pgvector adapter
-│   │   │   └── custom.ts      # Custom adapter validator
+│   │   │   └── custom.ts      # Custom adapter runtime validator
 │   │   └── embedder/
 │   │       ├── local.ts       # Transformers.js worker thread embedder
 │   │       ├── openai.ts      # OpenAI embeddings adapter
@@ -95,9 +96,11 @@ semantic-recall/
 │   └── workers/
 │       └── embedder.worker.ts # Worker thread for CPU-isolated embedding
 ├── tests/
-│   ├── memory.test.ts         # Integration tests (17 tests)
+│   ├── memory.test.ts         # Core integration tests (17 tests)
 │   ├── queue.test.ts          # Queue state machine tests (6 tests)
-│   └── utils.test.ts          # Unit tests for utils (14 tests)
+│   ├── utils.test.ts          # Unit tests for utils (14 tests)
+│   ├── adapter.test.ts        # Adapter contract + BaseStorageAdapter tests (19 tests)
+│   └── features.test.ts       # v1.1 feature tests — tags, batch, stats, export (19 tests)
 ├── tsconfig.json
 ├── tsup.config.ts
 └── vitest.config.ts
@@ -125,7 +128,7 @@ Run the full verification suite:
 
 ```bash
 npm run typecheck    # TypeScript must pass with zero errors
-npm test             # All 37+ tests must pass
+npm test             # All 75 tests must pass
 npm run build        # Dual ESM/CJS build must succeed
 ```
 
@@ -225,12 +228,10 @@ We welcome feature ideas! Open a [GitHub Issue](https://github.com/skt329/semant
 ### High-Impact Contribution Ideas
 
 - **New storage adapters** — Redis, PostgreSQL (raw), DynamoDB, MongoDB
-- **Batch operations** — `rememberMany()`, `recallMany()`
 - **Streaming recall** — Async iterator for large result sets
-- **Metadata tagging** — Attach arbitrary metadata to memories
-- **Import/export** — JSON dump and restore for migrations
 - **Instrumentation** — OpenTelemetry spans for pipeline stages
 - **Web/Edge support** — Wasm-based embedder for edge runtimes
+- **React integration** — `useMemory()` hook for React apps
 
 ---
 
@@ -264,7 +265,7 @@ remember("user is vegetarian")
 
 1. **Never throw from `remember()`** — Fire-and-forget by design. Errors flow through events.
 2. **Queue-first** — Every memory goes through the persistent `pending_memories` table before processing. Crash-safe by default.
-3. **Adapter pattern** — Storage and embedder are pluggable. Implement `StorageAdapter` (in `types.ts`) for any backend.
+3. **Adapter pattern** — Storage and embedder are pluggable. Extend `BaseStorageAdapter` (in `adapters/storage/base.ts`) for any backend. The abstract class enforces the 24-method contract at compile time.
 4. **Worker isolation** — Embedding runs in a `worker_threads` Worker so heavy models never block the main thread.
 
 ---
@@ -297,7 +298,9 @@ npx vitest run tests/memory.test.ts
 |---|---|---|
 | Utilities (math, TTL) | `tests/utils.test.ts` | 14 |
 | Queue state machine | `tests/queue.test.ts` | 6 |
-| Integration (full pipeline) | `tests/memory.test.ts` | 17 |
+| Core integration (full pipeline) | `tests/memory.test.ts` | 17 |
+| Adapter contract + BaseStorageAdapter | `tests/adapter.test.ts` | 19 |
+| v1.1 features (tags, batch, stats, export) | `tests/features.test.ts` | 19 |
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "semantic-recall",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Persistent semantic memory for LLM apps, AI agents, and chatbots. Zero config, zero API keys, works fully offline. SQLite + local embeddings via Transformers.js. Two methods: remember() and recall(). Drop-in Mem0 alternative and LangChain memory alternative.",
   "type": "module",
   "main": "./dist/index.cjs",

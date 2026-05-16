@@ -17,6 +17,7 @@ export interface InsertMemoryParams {
   embedding: number[];
   createdAt: string;
   expiresAt: string | null;
+  tags?: string[];
 }
 
 /**
@@ -38,6 +39,8 @@ export interface RawMemoryRow {
   embedding: string; // JSON-serialized number[]
   created_at: string;
   expires_at: string | null;
+  tags?: string | null;         // JSON-serialized string[] in DB
+  recall_count?: number | null; // May be NULL in older rows
 }
 
 /**
@@ -75,66 +78,88 @@ export interface MemoryJob {
   nextRetryAt: string | null;
 }
 
+// ─── Versioned Storage Adapter Hierarchy ────────────────────────────────────
+
 /**
- * Contract that every storage adapter must implement.
- * Handles both memory CRUD and queue operations.
+ * V1 contract — the original 16 methods, frozen forever.
+ *
+ * When future versions add methods, this interface remains unchanged.
+ * Users only see `StorageAdapter` and `BaseStorageAdapter` — this
+ * exists solely for internal versioning documentation.
+ *
+ * @internal
  */
-export interface StorageAdapter {
-  /** Create tables/indexes if they don't exist. */
+interface StorageAdapterV1 {
   init(): Promise<void>;
-
-  /** Insert a memory row. Returns the new memory ID. */
   insertMemory(params: InsertMemoryParams): Promise<number>;
-
-  /** Return all non-expired memories for a user+namespace (for JS-side cosine search). */
   searchMemories(params: SearchParams): Promise<RawMemoryRow[]>;
-
-  /** Delete a specific memory by ID. */
   deleteMemory(id: number): Promise<void>;
-
-  /** Delete all memories for a user+namespace. */
   deleteAllMemories(userId: string, namespace: string): Promise<void>;
-
-  /** List memories (no vector search, raw list). */
   listMemories(userId: string, namespace: string, limit: number): Promise<RawMemoryRow[]>;
-
-  /** Remove expired memory rows for a user. */
   pruneExpired(userId: string): Promise<void>;
-
-  // ─── Queue Operations ───────────────────────────────────────────────
-
-  /** Enqueue a new pending job. Returns the job ID. */
   enqueue(job: NewJob): Promise<number>;
-
-  /** Mark a job as processing. */
   markProcessing(jobId: number): Promise<void>;
-
-  /** Mark a job as done. */
   markDone(jobId: number): Promise<void>;
-
-  /**
-   * Mark a job as failed with error details.
-   * If attempts >= maxAttempts, marks as 'dead' instead.
-   */
   markFailed(jobId: number, error: string): Promise<void>;
-
-  /** Get all retryable jobs (pending/failed with next_retry_at <= now). */
   getRetryable(): Promise<MemoryJob[]>;
-
-  /** Get all dead jobs for a user. */
   getDeadJobs(userId: string): Promise<MemoryJob[]>;
-
-  /** Reset stale 'processing' jobs to 'pending' (crash recovery). */
   resetStaleProcessing(): Promise<void>;
-
-  /** Delete old 'done' rows from pending_memories. */
   cleanupDoneJobs(olderThanMs: number): Promise<number>;
-
-  /** Retry a dead job by resetting its status. */
   retryDeadJob(jobId: number): Promise<void>;
-
-  /** Close underlying database connection (cleanup). */
   close(): void;
+}
+
+/**
+ * Parameters for updateMemory().
+ */
+export interface UpdateMemoryParams {
+  content: string;
+  embedding: number[];
+  tags?: string[];
+}
+
+/**
+ * Adapter-level statistics for a user.
+ */
+export interface AdapterStats {
+  totalMemories: number;
+  oldestDate: string | null;
+  newestDate: string | null;
+  mostRecalled: { content: string; recallCount: number } | null;
+  deadJobCount: number;
+  namespaceCounts: Record<string, number>;
+  storageSizeKB: number | null;
+}
+
+/**
+ * Current full storage adapter contract — all 23 methods required.
+ *
+ * Extends StorageAdapterV1 with 7 new methods added in v1.1.0.
+ * All methods are required — no optional markers.
+ * Custom adapter authors should extend `BaseStorageAdapter` which
+ * provides default implementations for analytics-only methods.
+ */
+export interface StorageAdapter extends StorageAdapterV1 {
+  /** Get a single memory by ID. Returns null if not found. */
+  getMemoryById(id: number): Promise<RawMemoryRow | null>;
+
+  /** Update a memory's content, embedding, and optionally tags in-place. */
+  updateMemory(id: number, params: UpdateMemoryParams): Promise<void>;
+
+  /** Fire-and-forget recall count increment for analytics. */
+  incrementRecallCount(ids: number[]): Promise<void>;
+
+  /** Get ALL memories for a user across all namespaces. */
+  getAllMemories(userId: string): Promise<RawMemoryRow[]>;
+
+  /** List distinct namespaces for a user. */
+  listNamespaces(userId: string): Promise<string[]>;
+
+  /** Get aggregate stats for a user. */
+  getStats(userId: string): Promise<AdapterStats>;
+
+  /** Batch insert memories. Returns array of inserted IDs. */
+  bulkInsertMemories(memories: InsertMemoryParams[]): Promise<number[]>;
 }
 
 // ─── Embedder Types ─────────────────────────────────────────────────────────
@@ -212,6 +237,13 @@ export interface MemoryOptions {
   /** Namespace for memory isolation. Default: 'default'. */
   namespace?: string;
 
+  /**
+   * Default TTL applied to all memories. Can be overridden per-call.
+   * Pass `null` on a per-call basis to make a memory permanent.
+   * Accepts: '1h', '12h', '7d', '30d', or milliseconds as a number.
+   */
+  defaultTtl?: string | number;
+
   /** Cosine similarity threshold for deduplication. Default: 0.92. Range: 0.0–1.0. */
   dedupThreshold?: number;
 
@@ -245,8 +277,12 @@ export interface RememberOptions {
   /**
    * Time-to-live for this memory.
    * Accepts: '1h', '12h', '7d', '30d', or milliseconds as a number.
+   * Pass `null` to explicitly make this memory permanent (overrides defaultTtl).
    */
-  ttl?: string | number;
+  ttl?: string | number | null;
+
+  /** Tags to attach to this memory for filtered recall. */
+  tags?: string[];
 }
 
 /**
@@ -261,6 +297,15 @@ export interface RecallOptions {
 
   /** Override the maximum number of results. */
   topK?: number;
+
+  /** Filter: only return memories created after this ISO date. */
+  after?: string;
+
+  /** Filter: only return memories created before this ISO date. */
+  before?: string;
+
+  /** Filter: only return memories that contain ALL of these tags. */
+  tags?: string[];
 }
 
 /**
@@ -272,6 +317,8 @@ export interface MemoryResult {
   similarity: number;
   createdAt: string;
   expiresAt: string | null;
+  tags: string[];
+  recallCount: number;
 }
 
 /**
@@ -281,6 +328,52 @@ export interface RememberResult {
   saved: boolean;
   duplicate: boolean;
 }
+
+/**
+ * Return type for rememberMany().
+ */
+export interface BatchRememberResult {
+  total: number;
+  saved: number;
+  duplicates: number;
+  errors: number;
+}
+
+/**
+ * Serialized export format for import/export.
+ */
+export interface ExportData {
+  version: number;
+  exportedAt: string;
+  userId: string;
+  memories: Array<{
+    content: string;
+    namespace: string;
+    embedding: number[];
+    createdAt: string;
+    expiresAt: string | null;
+    tags: string[];
+  }>;
+}
+
+/**
+ * Options for the related() method.
+ */
+export interface RelatedOptions {
+  /** Override the similarity threshold. */
+  threshold?: number;
+  /** Override the max number of related memories. */
+  topK?: number;
+  /** Override the namespace (only when crossNamespace is false). */
+  namespace?: string;
+  /** If true, search across ALL namespaces. Ignores options.namespace. */
+  crossNamespace?: boolean;
+}
+
+/**
+ * User-facing stats wrapper returned by memory.stats().
+ */
+export interface MemoryStats extends AdapterStats {}
 
 // ─── Event Payloads ─────────────────────────────────────────────────────────
 
@@ -345,6 +438,7 @@ export interface InjectParams {
   storage: StorageAdapter;
   replayed?: boolean;
   retried?: boolean;
+  tags?: string[];
 }
 
 export interface RecallParams {
@@ -355,4 +449,7 @@ export interface RecallParams {
   topK: number;
   embedder: EmbedderFunction;
   storage: StorageAdapter;
+  after?: string;
+  before?: string;
+  tags?: string[];
 }

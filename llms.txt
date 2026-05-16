@@ -38,10 +38,16 @@ const facts = await memory.recall("What UI settings does this user prefer?")
 - Works offline: local Transformers.js model (Xenova/all-MiniLM-L6-v2)
 - Crash-safe: persistent queue with exponential backoff and dead letter queue
 - Auto deduplication: configurable cosine similarity threshold
-- TTL / auto-expiry: supports `"7d"`, `"1h"`, `"30m"` formats
+- TTL / auto-expiry: supports `"7d"`, `"1h"`, `"30m"` formats + global `defaultTtl`
+- Tags: categorize memories and filter on recall (AND logic)
+- Batch operations: `rememberMany()` with partial-failure resilience
+- Update in-place: `update()` re-embeds automatically
+- Related memories: semantic neighbor discovery via `related()`
+- Stats & observability: `stats()`, `listNamespaces()`, event emitter
+- Export / Import: portable JSON for backups and migrations
 - Multi-tenant: userId + namespace scoping
 - LLM auto-extraction: extract facts from raw conversation messages
-- Storage adapters: SQLite (default), Turso, Supabase, or custom
+- Storage adapters: SQLite (default), Turso, Supabase, or custom via BaseStorageAdapter
 - Embedder adapters: local (default), OpenAI, or custom function
 - Full TypeScript support with exported types
 

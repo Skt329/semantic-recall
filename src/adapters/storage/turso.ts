@@ -30,6 +30,8 @@ import type {
   NewJob,
   MemoryJob,
   JobStatus,
+  AdapterStats,
+  UpdateMemoryParams,
 } from '../../types.js';
 import { computeBackoffMs, nowISO } from '../../utils.js';
 
@@ -85,6 +87,17 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
     };
   }
 
+  /** Safe column addition — no-op if column already exists. */
+  async function migrateAddColumn(table: string, column: string, alterSql: string): Promise<void> {
+    const db = await getClient();
+    const result = await db.execute({ sql: `PRAGMA table_info(${table})`, args: [] });
+    const columns = result.rows as unknown as Array<{ name: string }>;
+    const exists = columns.some(c => c.name === column);
+    if (!exists) {
+      await db.execute({ sql: alterSql, args: [] });
+    }
+  }
+
   const adapter: StorageAdapter = {
     async init(): Promise<void> {
       const db = await getClient();
@@ -125,13 +138,17 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
           args: [],
         },
       ]);
+
+      // Guarded migrations
+      await migrateAddColumn('memories', 'tags', "ALTER TABLE memories ADD COLUMN tags TEXT DEFAULT '[]'");
+      await migrateAddColumn('memories', 'recall_count', 'ALTER TABLE memories ADD COLUMN recall_count INTEGER DEFAULT 0');
     },
 
     async insertMemory(params: InsertMemoryParams): Promise<number> {
       const db = await getClient();
       const result = await db.execute({
-        sql: `INSERT INTO memories (user_id, namespace, content, embedding, created_at, expires_at)
-              VALUES (?, ?, ?, ?, ?, ?)`,
+        sql: `INSERT INTO memories (user_id, namespace, content, embedding, created_at, expires_at, tags)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
         args: [
           params.userId,
           params.namespace,
@@ -139,6 +156,7 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
           JSON.stringify(params.embedding),
           params.createdAt,
           params.expiresAt,
+          JSON.stringify(params.tags ?? []),
         ],
       });
       return Number(result.lastInsertRowid);
@@ -147,7 +165,7 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
     async searchMemories(params: SearchParams): Promise<RawMemoryRow[]> {
       const db = await getClient();
       const result = await db.execute({
-        sql: `SELECT id, user_id, namespace, content, embedding, created_at, expires_at
+        sql: `SELECT id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count
               FROM memories
               WHERE user_id = ? AND namespace = ?
                 AND (expires_at IS NULL OR expires_at > ?)`,
@@ -172,7 +190,7 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
     async listMemories(userId: string, namespace: string, limit: number): Promise<RawMemoryRow[]> {
       const db = await getClient();
       const result = await db.execute({
-        sql: `SELECT id, user_id, namespace, content, embedding, created_at, expires_at
+        sql: `SELECT id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count
               FROM memories
               WHERE user_id = ? AND namespace = ?
                 AND (expires_at IS NULL OR expires_at > ?)
@@ -189,6 +207,146 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
         args: [userId, nowISO()],
       });
     },
+
+    // ─── New Methods (v1.1.0) ─────────────────────────────────────────
+
+    async getMemoryById(id: number): Promise<RawMemoryRow | null> {
+      const db = await getClient();
+      const result = await db.execute({
+        sql: `SELECT id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count
+              FROM memories WHERE id = ?`,
+        args: [id],
+      });
+      return (result.rows[0] as unknown as RawMemoryRow) ?? null;
+    },
+
+    async updateMemory(id: number, params: UpdateMemoryParams): Promise<void> {
+      const db = await getClient();
+      await db.execute({
+        sql: `UPDATE memories SET content = ?, embedding = ?, tags = ? WHERE id = ?`,
+        args: [
+          params.content,
+          JSON.stringify(params.embedding),
+          JSON.stringify(params.tags ?? []),
+          id,
+        ],
+      });
+    },
+
+    async incrementRecallCount(ids: number[]): Promise<void> {
+      if (ids.length === 0) return;
+      const db = await getClient();
+      const placeholders = ids.map(() => '?').join(',');
+      await db.execute({
+        sql: `UPDATE memories SET recall_count = COALESCE(recall_count, 0) + 1 WHERE id IN (${placeholders})`,
+        args: ids,
+      });
+    },
+
+    async getAllMemories(userId: string): Promise<RawMemoryRow[]> {
+      const db = await getClient();
+      const result = await db.execute({
+        sql: `SELECT id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count
+              FROM memories
+              WHERE user_id = ?
+                AND (expires_at IS NULL OR expires_at > ?)
+              ORDER BY created_at DESC`,
+        args: [userId, nowISO()],
+      });
+      return result.rows as unknown as RawMemoryRow[];
+    },
+
+    async listNamespaces(userId: string): Promise<string[]> {
+      const db = await getClient();
+      const result = await db.execute({
+        sql: 'SELECT DISTINCT namespace FROM memories WHERE user_id = ?',
+        args: [userId],
+      });
+      return (result.rows as unknown as Array<{ namespace: string }>).map(r => r.namespace);
+    },
+
+    async getStats(userId: string): Promise<AdapterStats> {
+      const db = await getClient();
+      const now = nowISO();
+
+      const countResult = await db.execute({
+        sql: `SELECT COUNT(*) as cnt FROM memories
+              WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?)`,
+        args: [userId, now],
+      });
+      const totalMemories = (countResult.rows[0] as unknown as { cnt: number })?.cnt ?? 0;
+
+      const dateResult = await db.execute({
+        sql: `SELECT MIN(created_at) as oldest, MAX(created_at) as newest
+              FROM memories
+              WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?)`,
+        args: [userId, now],
+      });
+      const dateRow = dateResult.rows[0] as unknown as { oldest: string | null; newest: string | null } | undefined;
+
+      const recallResult = await db.execute({
+        sql: `SELECT content, COALESCE(recall_count, 0) as rc
+              FROM memories
+              WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?)
+              ORDER BY rc DESC LIMIT 1`,
+        args: [userId, now],
+      });
+      const recalledRow = recallResult.rows[0] as unknown as { content: string; rc: number } | undefined;
+
+      const deadResult = await db.execute({
+        sql: `SELECT COUNT(*) as cnt FROM pending_memories
+              WHERE user_id = ? AND status = 'dead'`,
+        args: [userId],
+      });
+      const deadJobCount = (deadResult.rows[0] as unknown as { cnt: number })?.cnt ?? 0;
+
+      const nsResult = await db.execute({
+        sql: `SELECT namespace, COUNT(*) as cnt FROM memories
+              WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?)
+              GROUP BY namespace`,
+        args: [userId, now],
+      });
+      const namespaceCounts: Record<string, number> = {};
+      for (const r of nsResult.rows as unknown as Array<{ namespace: string; cnt: number }>) {
+        namespaceCounts[r.namespace] = r.cnt;
+      }
+
+      return {
+        totalMemories,
+        oldestDate: dateRow?.oldest ?? null,
+        newestDate: dateRow?.newest ?? null,
+        mostRecalled: recalledRow && recalledRow.rc > 0
+          ? { content: recalledRow.content, recallCount: recalledRow.rc }
+          : null,
+        deadJobCount,
+        namespaceCounts,
+        storageSizeKB: null, // Turso does not expose file-level size
+      };
+    },
+
+    async bulkInsertMemories(memories: InsertMemoryParams[]): Promise<number[]> {
+      const db = await getClient();
+      const ids: number[] = [];
+      for (const mem of memories) {
+        const result = await db.execute({
+          sql: `INSERT INTO memories (user_id, namespace, content, embedding, created_at, expires_at, tags)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            mem.userId,
+            mem.namespace,
+            mem.content,
+            JSON.stringify(mem.embedding),
+            mem.createdAt,
+            mem.expiresAt,
+            JSON.stringify(mem.tags ?? []),
+          ],
+        });
+        ids.push(Number(result.lastInsertRowid));
+      }
+      return ids;
+    },
+
+    // ─── Queue Operations ─────────────────────────────────────────────
 
     async enqueue(job: NewJob): Promise<number> {
       const db = await getClient();

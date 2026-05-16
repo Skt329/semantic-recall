@@ -94,6 +94,7 @@ export async function injectBackground(
       embedding: vector,
       createdAt: nowISO(),
       expiresAt,
+      tags: params.tags,
     });
 
     // Step 8: Mark job done

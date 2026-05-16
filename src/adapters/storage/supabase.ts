@@ -36,6 +36,8 @@ import type {
   NewJob,
   MemoryJob,
   JobStatus,
+  AdapterStats,
+  UpdateMemoryParams,
 } from '../../types.js';
 import { computeBackoffMs, nowISO } from '../../utils.js';
 
@@ -125,7 +127,9 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
     `  content TEXT NOT NULL,\n` +
     `  embedding vector(${dimensions}),\n` +
     `  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),\n` +
-    `  expires_at TIMESTAMPTZ\n` +
+    `  expires_at TIMESTAMPTZ,\n` +
+    `  tags JSONB DEFAULT '[]'::jsonb,\n` +
+    `  recall_count INTEGER DEFAULT 0\n` +
     `);\n` +
     `CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, namespace);\n\n` +
     `CREATE TABLE IF NOT EXISTS pending_memories (\n` +
@@ -141,6 +145,12 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
     `  next_retry_at TIMESTAMPTZ\n` +
     `);\n` +
     `CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_memories(status, next_retry_at);`;
+
+  // Migration SQL shown when tags/recall_count columns are missing
+  const MIGRATION_SQL =
+    `-- Run this SQL to add new columns for v1.1.0:\n` +
+    `ALTER TABLE memories ADD COLUMN IF NOT EXISTS tags JSONB DEFAULT '[]'::jsonb;\n` +
+    `ALTER TABLE memories ADD COLUMN IF NOT EXISTS recall_count INTEGER DEFAULT 0;`;
 
   // Postgres error code for "relation does not exist" (undefined table)
   const MISSING_TABLE_CODE = '42P01';
@@ -191,6 +201,22 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
           `Provide a serviceRoleKey in adapter options for reliable startup validation.`
         );
       }
+
+      // Probe for new columns — log migration SQL if missing
+      // We do NOT auto-DDL with an anon key.
+      if (!memoriesProbe.error) {
+        const colProbe = await db
+          .from('memories')
+          .select('tags')
+          .limit(0) as { error?: { message: string; code?: string } };
+
+        if (colProbe.error) {
+          console.warn(
+            `[semantic-recall] Supabase 'memories' table is missing 'tags' and/or 'recall_count' columns.\n` +
+            `Run the following migration SQL:\n\n${MIGRATION_SQL}`
+          );
+        }
+      }
     },
 
     async insertMemory(params: InsertMemoryParams): Promise<number> {
@@ -204,6 +230,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
           embedding: JSON.stringify(params.embedding),
           created_at: params.createdAt,
           expires_at: params.expiresAt,
+          tags: JSON.stringify(params.tags ?? []),
         })
         .select('id')
         .single() as { data?: { id: number }; error?: { message: string } };
@@ -220,7 +247,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       const now = nowISO();
       const result = await db
         .from('memories')
-        .select('id, user_id, namespace, content, embedding, created_at, expires_at')
+        .select('id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count')
         .eq('user_id', params.userId)
         .eq('namespace', params.namespace)
         .or(`expires_at.is.null,expires_at.gt.${now}`) as { data?: RawMemoryRow[]; error?: { message: string } };
@@ -246,7 +273,7 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       const db = await getClient();
       const result = await db
         .from('memories')
-        .select('id, user_id, namespace, content, embedding, created_at, expires_at')
+        .select('id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count')
         .eq('user_id', userId)
         .eq('namespace', namespace)
         .order('created_at', { ascending: false })
@@ -263,6 +290,157 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
         .eq('user_id', userId)
         .lt('expires_at', nowISO());
     },
+
+    // ─── New Methods (v1.1.0) ─────────────────────────────────────────
+
+    async getMemoryById(id: number): Promise<RawMemoryRow | null> {
+      const db = await getClient();
+      const result = await db
+        .from('memories')
+        .select('id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count')
+        .eq('id', id)
+        .single() as { data?: RawMemoryRow; error?: { message: string } };
+
+      return result.data ?? null;
+    },
+
+    async updateMemory(id: number, params: UpdateMemoryParams): Promise<void> {
+      const db = await getClient();
+      const result = await db
+        .from('memories')
+        .update({
+          content: params.content,
+          embedding: JSON.stringify(params.embedding),
+          tags: JSON.stringify(params.tags ?? []),
+        })
+        .eq('id', id) as { error?: { message: string } };
+
+      if (result.error) {
+        throw new Error(`[semantic-recall] Supabase update failed: ${result.error.message}`);
+      }
+    },
+
+    async incrementRecallCount(ids: number[]): Promise<void> {
+      if (ids.length === 0) return;
+
+      // Supabase anon key cannot run raw SQL for batch increment.
+      // Log a dev-mode warning and no-op — this is analytics-only.
+      if (process.env['NODE_ENV'] !== 'production') {
+        console.warn(
+          `[semantic-recall] incrementRecallCount is a no-op on the Supabase adapter. ` +
+          `To enable recall counting, create an RPC function: ` +
+          `CREATE FUNCTION increment_recall_count(ids bigint[]) RETURNS void AS $$ ` +
+          `UPDATE memories SET recall_count = COALESCE(recall_count, 0) + 1 WHERE id = ANY(ids); $$ LANGUAGE sql;`
+        );
+      }
+    },
+
+    async getAllMemories(userId: string): Promise<RawMemoryRow[]> {
+      const db = await getClient();
+      const now = nowISO();
+      const result = await db
+        .from('memories')
+        .select('id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count')
+        .eq('user_id', userId)
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
+        .order('created_at', { ascending: false }) as { data?: RawMemoryRow[] };
+
+      return result.data ?? [];
+    },
+
+    async listNamespaces(userId: string): Promise<string[]> {
+      const db = await getClient();
+      // Supabase doesn't support DISTINCT directly, so we fetch and deduplicate
+      const result = await db
+        .from('memories')
+        .select('namespace')
+        .eq('user_id', userId) as { data?: Array<{ namespace: string }> };
+
+      const namespaces = new Set<string>();
+      for (const row of result.data ?? []) {
+        namespaces.add(row.namespace);
+      }
+      return Array.from(namespaces);
+    },
+
+    async getStats(userId: string): Promise<AdapterStats> {
+      const db = await getClient();
+      const now = nowISO();
+
+      // Fetch all live memories for stats computation
+      const allResult = await db
+        .from('memories')
+        .select('id, namespace, content, created_at, expires_at, recall_count')
+        .eq('user_id', userId)
+        .or(`expires_at.is.null,expires_at.gt.${now}`) as { data?: Array<{
+          id: number; namespace: string; content: string;
+          created_at: string; expires_at: string | null; recall_count: number | null;
+        }> };
+
+      const allMemories = allResult.data ?? [];
+
+      // Dead jobs
+      const deadResult = await db
+        .from('pending_memories')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('status', 'dead') as { count?: number | null };
+
+      // Compute namespace counts
+      const namespaceCounts: Record<string, number> = {};
+      for (const row of allMemories) {
+        namespaceCounts[row.namespace] = (namespaceCounts[row.namespace] ?? 0) + 1;
+      }
+
+      // Sort for date range
+      const sorted = [...allMemories].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+
+      // Most recalled
+      const mostRecalled = allMemories.reduce<{ content: string; recallCount: number } | null>(
+        (best, row) => {
+          const rc = row.recall_count ?? 0;
+          return rc > (best?.recallCount ?? 0) ? { content: row.content, recallCount: rc } : best;
+        }, null
+      );
+
+      return {
+        totalMemories: allMemories.length,
+        oldestDate: sorted[0]?.created_at ?? null,
+        newestDate: sorted.at(-1)?.created_at ?? null,
+        mostRecalled: mostRecalled?.recallCount ? mostRecalled : null,
+        deadJobCount: deadResult.count ?? 0,
+        namespaceCounts,
+        storageSizeKB: null, // Supabase does not expose storage size via client API
+      };
+    },
+
+    async bulkInsertMemories(memories: InsertMemoryParams[]): Promise<number[]> {
+      const db = await getClient();
+      const rows = memories.map(mem => ({
+        user_id: mem.userId,
+        namespace: mem.namespace,
+        content: mem.content,
+        embedding: JSON.stringify(mem.embedding),
+        created_at: mem.createdAt,
+        expires_at: mem.expiresAt,
+        tags: JSON.stringify(mem.tags ?? []),
+      }));
+
+      const result = await db
+        .from('memories')
+        .insert(rows)
+        .select('id') as { data?: Array<{ id: number }>; error?: { message: string } };
+
+      if (result.error) {
+        throw new Error(`[semantic-recall] Supabase bulk insert failed: ${result.error.message}`);
+      }
+
+      return (result.data ?? []).map(r => r.id);
+    },
+
+    // ─── Queue Operations ─────────────────────────────────────────────
 
     async enqueue(job: NewJob): Promise<number> {
       const db = await getClient();

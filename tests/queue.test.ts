@@ -8,7 +8,11 @@ function testDbPath(name: string): string {
   return path.join(TEST_DB_DIR, `q-${name}-${Date.now()}.db`);
 }
 
-beforeEach(() => { fs.mkdirSync(TEST_DB_DIR, { recursive: true }); });
+beforeEach(() => {
+  if (!fs.existsSync(TEST_DB_DIR)) {
+    fs.mkdirSync(TEST_DB_DIR, { recursive: true });
+  }
+});
 afterEach(() => {
   try { for (const f of fs.readdirSync(TEST_DB_DIR)) fs.unlinkSync(path.join(TEST_DB_DIR, f)); } catch {}
 });

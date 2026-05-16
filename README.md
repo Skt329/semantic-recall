@@ -4,7 +4,7 @@
   <p align="center">
     <strong>Give your AI a brain that remembers.</strong>
     <br />
-    Persistent semantic memory for LLM apps — zero config, zero API keys, two methods.
+    Persistent semantic memory for LLM apps — zero config, zero API keys, production-grade.
   </p>
   <p align="center">
     <a href="https://www.npmjs.com/package/semantic-recall"><img src="https://img.shields.io/npm/v/semantic-recall?style=flat-square&color=cb3837" alt="npm version" /></a>
@@ -53,7 +53,10 @@ Most memory solutions require you to set up infrastructure, manage API keys, or 
 | **Auto deduplication** | ✅ Configurable threshold | ✅ | ❌ | ❌ |
 | **Crash recovery** | ✅ Persistent queue | ❌ | ❌ | ❌ |
 | **Worker thread isolation** | ✅ CPU never blocks | ❌ | N/A (separate server) | ❌ |
-| **TTL / auto-expiry** | ✅ `"7d"`, `"1h"` | ❌ | ❌ | ❌ |
+| **TTL / auto-expiry** | ✅ `"7d"`, `"1h"`, `defaultTtl` | ❌ | ❌ | ❌ |
+| **Tags & filtering** | ✅ Tag-based + date-range | ❌ | ❌ | ❌ |
+| **Batch operations** | ✅ `rememberMany()` | ❌ | ❌ | ❌ |
+| **Export / Import** | ✅ Portable JSON | ❌ | ❌ | ❌ |
 | **Multi-tenant** | ✅ userId + namespace | ✅ user/session/agent | ✅ Sessions | ❌ |
 | **Bundle size** | ~67 KB | Cloud SDK | Cloud SDK | Large framework |
 | **Free & open-source** | ✅ MIT, forever | Freemium (paid tiers) | Freemium (credit-based) | ✅ MIT |
@@ -140,6 +143,75 @@ memory.remember("User is in Paris for a conference", { ttl: "7d" })
 
 // Supported formats: '500ms', '60s', '30m', '12h', '7d'
 memory.remember("Session preference: compact view", { ttl: "1h" })
+
+// Apply a default TTL to all memories
+const memory = new Memory({ userId: 'user_123', defaultTtl: '30d' })
+memory.remember("fact")          // expires in 30 days
+memory.remember("temp", { ttl: '1h' })  // per-call override
+memory.remember("permanent", { ttl: null })  // explicit permanent
+```
+
+### Tags — Categorize & Filter
+
+```typescript
+// Store memories with tags
+memory.remember("User is vegetarian", { tags: ['diet', 'health'] })
+memory.remember("User likes Python", { tags: ['tech'] })
+
+// Filter recall by tags (AND logic — all tags must match)
+const diet = await memory.recall("preferences", { tags: ['diet'] })
+// → ["User is vegetarian"]
+
+// Filter by date range
+const recent = await memory.recallDetailed("preferences", {
+  after: '2024-01-01T00:00:00Z',
+})
+```
+
+### Batch Operations
+
+```typescript
+// Store multiple memories at once (partial-failure resilient)
+const result = await memory.rememberMany([
+  'User likes cats',
+  'User works at Google',
+  'User lives in NYC',
+])
+console.log(result) // { total: 3, saved: 3, duplicates: 0, errors: 0 }
+```
+
+### Update & Related
+
+```typescript
+// Update a memory in-place (re-embeds automatically)
+const list = await memory.list()
+await memory.update(list[0].id, 'Updated content', ['new-tag'])
+
+// Find semantically related memories
+const related = await memory.related(list[0].id, {
+  threshold: 0.5,
+  topK: 3,
+  crossNamespace: true,
+})
+```
+
+### Stats, Export & Import
+
+```typescript
+// Aggregate stats
+const stats = await memory.stats()
+// { totalMemories, namespaceCounts, oldestDate, newestDate, ... }
+
+// List all namespaces
+const namespaces = await memory.listNamespaces()
+
+// Export all memories as portable JSON
+const data = await memory.export()
+fs.writeFileSync('backup.json', JSON.stringify(data))
+
+// Import into a new instance
+const imported = await newMemory.import(data)
+console.log(`Imported ${imported.imported} memories`)
 ```
 
 ### LLM Auto-Extraction
@@ -295,32 +367,43 @@ const memory = new Memory({
 
 ### Custom Adapter
 
-Implement the `StorageAdapter` interface for any backend:
+Extend `BaseStorageAdapter` for compile-time enforcement of the full interface:
 
 ```typescript
-import { Memory, type StorageAdapter } from 'semantic-recall'
+import { Memory, BaseStorageAdapter } from 'semantic-recall'
+import type { InsertMemoryParams, RawMemoryRow, NewJob, MemoryJob } from 'semantic-recall'
 
-const myAdapter: StorageAdapter = {
-  async init() { /* create tables */ },
-  async insertMemory(params) { /* insert */ },
-  async searchMemories(params) { /* return all rows */ },
-  async deleteMemory(id) { /* delete by id */ },
-  async deleteAllMemories(userId, namespace) { /* bulk delete */ },
-  async listMemories(userId, namespace, limit) { /* list */ },
-  async pruneExpired(userId) { /* remove expired */ },
-  async enqueue(job) { /* queue job, return id */ },
-  async markProcessing(jobId) { /* update status */ },
-  async markDone(jobId) { /* update status */ },
-  async markFailed(jobId, error) { /* update status + backoff */ },
-  async getRetryable() { /* return pending/failed jobs */ },
-  async getDeadJobs(userId) { /* return dead jobs */ },
-  async resetStaleProcessing() { /* crash recovery */ },
-  async cleanupDoneJobs(olderThanMs) { /* prune */ },
-  async retryDeadJob(jobId) { /* reset dead → pending */ },
-  close() { /* cleanup */ },
+class MyAdapter extends BaseStorageAdapter {
+  // TypeScript tells you every abstract method you need to implement.
+  // BaseStorageAdapter provides defaults for:
+  //   - incrementRecallCount (no-op)
+  //   - bulkInsertMemories (sequential fallback)
+  //   - getStats (composed from other methods)
+
+  async init() { /* create tables */ }
+  async insertMemory(params: InsertMemoryParams) { /* insert, return id */ return 1 }
+  async searchMemories(params: any) { return [] as RawMemoryRow[] }
+  async deleteMemory(id: number) { /* delete by id */ }
+  async deleteAllMemories(userId: string, namespace: string) { /* bulk delete */ }
+  async listMemories(userId: string, namespace: string, limit: number) { return [] as RawMemoryRow[] }
+  async pruneExpired(userId: string) { /* remove expired */ }
+  async getMemoryById(id: number) { return null }
+  async updateMemory(id: number, params: any) { /* update in-place */ }
+  async getAllMemories(userId: string) { return [] as RawMemoryRow[] }
+  async listNamespaces(userId: string) { return [] as string[] }
+  async enqueue(job: NewJob) { return 1 }
+  async markProcessing(jobId: number) {}
+  async markDone(jobId: number) {}
+  async markFailed(jobId: number, error: string) {}
+  async getRetryable() { return [] as MemoryJob[] }
+  async getDeadJobs(userId: string) { return [] as MemoryJob[] }
+  async resetStaleProcessing() {}
+  async cleanupDoneJobs(olderThanMs: number) { return 0 }
+  async retryDeadJob(jobId: number) {}
+  close() { /* cleanup */ }
 }
 
-const memory = new Memory({ userId: 'user_123', storage: myAdapter })
+const memory = new Memory({ userId: 'user_123', storage: new MyAdapter() })
 ```
 
 ---
@@ -388,6 +471,7 @@ const memory = new Memory({
   dedupThreshold: 0.92,         // Cosine sim threshold for dedup (0–1)
   recallThreshold: 0.70,        // Min similarity to return (0–1)
   topK: 5,                      // Max results per recall()
+  defaultTtl: '30d',            // Applied to all memories unless overridden
 
   // ─── Reliability ───────────────────────────────
   maxAttempts: 3,                // Retries before marking dead
@@ -404,26 +488,55 @@ const memory = new Memory({
 
 ## API Reference
 
+### Core Methods
+
 | Method | Returns | Description |
 |---|---|---|
 | `memory.remember(text, opts?)` | `void` | Store a memory. Fire-and-forget, never throws. |
 | `memory.rememberAndWait(text, opts?)` | `Promise<RememberResult>` | Store and wait. Returns `{ saved, duplicate }`. |
+| `memory.rememberMany(texts, opts?)` | `Promise<BatchRememberResult>` | Store multiple memories. Returns `{ total, saved, duplicates, errors }`. |
 | `memory.recall(query, opts?)` | `Promise<string[]>` | Semantic search. Returns content strings. |
 | `memory.recallDetailed(query, opts?)` | `Promise<MemoryResult[]>` | Like recall but with similarity scores + metadata. |
 | `memory.extractAndRemember(messages, opts?)` | `Promise<void>` | LLM-powered fact extraction from conversations. |
+
+### Memory Management
+
+| Method | Returns | Description |
+|---|---|---|
+| `memory.update(id, text, tags?)` | `Promise<void>` | Update a memory in-place (re-embeds automatically). |
+| `memory.related(id, opts?)` | `Promise<MemoryResult[]>` | Find semantically related memories. |
 | `memory.forget(memoryId)` | `Promise<void>` | Delete a specific memory. |
 | `memory.forgetAll(opts?)` | `Promise<void>` | Delete all memories for user+namespace. |
 | `memory.list(opts?)` | `Promise<MemoryResult[]>` | List all stored memories (no search). |
+| `memory.listNamespaces()` | `Promise<string[]>` | List distinct namespaces for this user. |
+
+### Observability & Data
+
+| Method | Returns | Description |
+|---|---|---|
+| `memory.stats()` | `Promise<AdapterStats>` | Aggregate stats (counts, dates, most recalled). |
+| `memory.export()` | `Promise<ExportData>` | Export all memories as portable JSON. |
+| `memory.import(data)` | `Promise<{ imported }>` | Import memories with dimension validation. |
 | `memory.getDeadJobs()` | `Promise<MemoryJob[]>` | Inspect failed jobs. |
 | `memory.retryDead(jobId)` | `Promise<void>` | Retry a dead job. |
 | `memory.cleanup(opts?)` | `Promise<{ deleted }>` | Prune old done jobs from queue. |
 | `memory.destroy()` | `void` | Stop scheduler, close DB. |
+
+### Options
+
+| Option | Type | Description |
+|---|---|---|
+| `tags` | `string[]` | Tag memories on `remember()`, filter on `recall()` (AND logic). |
+| `after` / `before` | `string` (ISO) | Date-range filter on `recall()` / `recallDetailed()`. |
+| `ttl` | `string \| number \| null` | Per-call TTL. `null` = permanent (overrides `defaultTtl`). |
+| `crossNamespace` | `boolean` | On `related()`, search across all namespaces. |
 
 ### Events
 
 | Event | Payload | When |
 |---|---|---|
 | `memory:saved` | `{ jobId, content, replayed?, retried? }` | Memory stored successfully |
+| `memory:duplicate` | `{ content }` | Duplicate detected, skipped |
 | `memory:retry` | `{ jobId, content, error, attempts }` | Job failed, will retry |
 | `memory:dead` | `{ jobId, content, error, attempts }` | Job exhausted all retries |
 
@@ -438,8 +551,14 @@ import type {
   RecallOptions,
   MemoryResult,
   RememberResult,
+  BatchRememberResult,
   MemoryJob,
   StorageAdapter,
+  BaseStorageAdapter,
+  AdapterStats,
+  ExportData,
+  RelatedOptions,
+  UpdateMemoryParams,
   EmbedderFunction,
   ConversationMessage,
   LLMFunction,
@@ -538,7 +657,7 @@ We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for:
 - Development setup and project structure
 - Coding standards and commit conventions
 - PR process and templates
-- High-impact contribution ideas (new adapters, batch ops, streaming, metadata)
+- High-impact contribution ideas (new adapters, streaming, instrumentation)
 
 ### Quick Links
 
