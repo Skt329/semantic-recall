@@ -140,11 +140,16 @@ export function parseEmbedding(json: string): number[] {
 /**
  * Compute exponential backoff delay in milliseconds.
  *
- * Formula: 2^attempts * 1000ms
+ * Formula: min(2^attempts * 1000ms, MAX_BACKOFF_MS)
  * Attempt 1 → 2s, Attempt 2 → 4s, Attempt 3 → 8s, etc.
+ *
+ * Cap prevents unbounded delays for high maxAttempts configurations.
+ * Default maxAttempts is 3, so attempts never reach this cap in typical use.
  */
+const MAX_BACKOFF_MS = 3_600_000; // 1 hour
+
 export function computeBackoffMs(attempts: number): number {
-  return Math.pow(2, attempts) * 1000;
+  return Math.min(Math.pow(2, attempts) * 1000, MAX_BACKOFF_MS);
 }
 
 /**

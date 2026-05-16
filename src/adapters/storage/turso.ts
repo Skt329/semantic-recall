@@ -84,6 +84,8 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
       lastError: (row['last_error'] as string) ?? null,
       createdAt: row['created_at'] as string,
       nextRetryAt: (row['next_retry_at'] as string) ?? null,
+      ttl: (row['ttl'] as string) ?? null,
+      tags: (row['tags'] as string) ?? null,
     };
   }
 
@@ -147,6 +149,8 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
       // Guarded migrations
       await migrateAddColumn('memories', 'tags', "ALTER TABLE memories ADD COLUMN tags TEXT DEFAULT '[]'");
       await migrateAddColumn('memories', 'recall_count', 'ALTER TABLE memories ADD COLUMN recall_count INTEGER DEFAULT 0');
+      await migrateAddColumn('pending_memories', 'ttl', 'ALTER TABLE pending_memories ADD COLUMN ttl TEXT');
+      await migrateAddColumn('pending_memories', 'tags', "ALTER TABLE pending_memories ADD COLUMN tags TEXT DEFAULT '[]'");
     },
 
     async insertMemory(params: InsertMemoryParams): Promise<number> {
@@ -366,9 +370,9 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
     async enqueue(job: NewJob): Promise<number> {
       const db = await getClient();
       const result = await db.execute({
-        sql: `INSERT INTO pending_memories (user_id, namespace, content, status, max_attempts, created_at)
-              VALUES (?, ?, ?, 'pending', ?, ?)`,
-        args: [job.userId, job.namespace, job.content, job.maxAttempts, nowISO()],
+        sql: `INSERT INTO pending_memories (user_id, namespace, content, status, max_attempts, created_at, ttl, tags)
+              VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)`,
+        args: [job.userId, job.namespace, job.content, job.maxAttempts, nowISO(), job.ttl != null ? String(job.ttl) : null, job.tags ? JSON.stringify(job.tags) : null],
       });
       return Number(result.lastInsertRowid);
     },
@@ -414,7 +418,7 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
     async getRetryable(): Promise<MemoryJob[]> {
       const db = await getClient();
       const result = await db.execute({
-        sql: `SELECT id, user_id, namespace, content, status, attempts, max_attempts, last_error, created_at, next_retry_at
+        sql: `SELECT id, user_id, namespace, content, status, attempts, max_attempts, last_error, created_at, next_retry_at, ttl, tags
               FROM pending_memories
               WHERE status IN ('pending', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= ?)`,
         args: [nowISO()],
@@ -425,7 +429,7 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
     async getDeadJobs(userId: string): Promise<MemoryJob[]> {
       const db = await getClient();
       const result = await db.execute({
-        sql: `SELECT id, user_id, namespace, content, status, attempts, max_attempts, last_error, created_at, next_retry_at
+        sql: `SELECT id, user_id, namespace, content, status, attempts, max_attempts, last_error, created_at, next_retry_at, ttl, tags
               FROM pending_memories WHERE user_id = ? AND status = 'dead'`,
         args: [userId],
       });

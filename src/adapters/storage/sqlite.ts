@@ -73,6 +73,14 @@ const MIGRATION_ADD_RECALL_COUNT = `
   ALTER TABLE memories ADD COLUMN recall_count INTEGER DEFAULT 0;
 `;
 
+const MIGRATION_ADD_PENDING_TTL = `
+  ALTER TABLE pending_memories ADD COLUMN ttl TEXT;
+`;
+
+const MIGRATION_ADD_PENDING_TAGS = `
+  ALTER TABLE pending_memories ADD COLUMN tags TEXT DEFAULT '[]';
+`;
+
 // ─── Adapter Implementation ────────────────────────────────────────────────
 
 export class SQLiteStorageAdapter implements StorageAdapter {
@@ -103,6 +111,8 @@ export class SQLiteStorageAdapter implements StorageAdapter {
     // Guarded migrations — only run if column doesn't exist yet
     this.migrateAddColumn('memories', 'tags', MIGRATION_ADD_TAGS);
     this.migrateAddColumn('memories', 'recall_count', MIGRATION_ADD_RECALL_COUNT);
+    this.migrateAddColumn('pending_memories', 'ttl', MIGRATION_ADD_PENDING_TTL);
+    this.migrateAddColumn('pending_memories', 'tags', MIGRATION_ADD_PENDING_TAGS);
   }
 
   /** Safe column addition — no-op if column already exists. */
@@ -327,8 +337,8 @@ export class SQLiteStorageAdapter implements StorageAdapter {
 
   async enqueue(job: NewJob): Promise<number> {
     const stmt = this.db.prepare(`
-      INSERT INTO pending_memories (user_id, namespace, content, status, max_attempts, created_at)
-      VALUES (?, ?, ?, 'pending', ?, ?)
+      INSERT INTO pending_memories (user_id, namespace, content, status, max_attempts, created_at, ttl, tags)
+      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -337,6 +347,8 @@ export class SQLiteStorageAdapter implements StorageAdapter {
       job.content,
       job.maxAttempts,
       nowISO(),
+      job.ttl != null ? String(job.ttl) : null,
+      job.tags ? JSON.stringify(job.tags) : null,
     );
 
     return Number(result.lastInsertRowid);
@@ -380,7 +392,7 @@ export class SQLiteStorageAdapter implements StorageAdapter {
     const now = nowISO();
     const rows = this.db.prepare(`
       SELECT id, user_id, namespace, content, status, attempts,
-             max_attempts, last_error, created_at, next_retry_at
+             max_attempts, last_error, created_at, next_retry_at, ttl, tags
       FROM pending_memories
       WHERE status IN ('pending', 'failed')
         AND (next_retry_at IS NULL OR next_retry_at <= ?)
@@ -395,6 +407,8 @@ export class SQLiteStorageAdapter implements StorageAdapter {
       last_error: string | null;
       created_at: string;
       next_retry_at: string | null;
+      ttl: string | null;
+      tags: string | null;
     }>;
 
     return rows.map(row => ({
@@ -408,13 +422,15 @@ export class SQLiteStorageAdapter implements StorageAdapter {
       lastError: row.last_error,
       createdAt: row.created_at,
       nextRetryAt: row.next_retry_at,
+      ttl: row.ttl,
+      tags: row.tags,
     }));
   }
 
   async getDeadJobs(userId: string): Promise<MemoryJob[]> {
     const rows = this.db.prepare(`
       SELECT id, user_id, namespace, content, status, attempts,
-             max_attempts, last_error, created_at, next_retry_at
+             max_attempts, last_error, created_at, next_retry_at, ttl, tags
       FROM pending_memories
       WHERE user_id = ? AND status = 'dead'
     `).all(userId) as Array<{
@@ -428,6 +444,8 @@ export class SQLiteStorageAdapter implements StorageAdapter {
       last_error: string | null;
       created_at: string;
       next_retry_at: string | null;
+      ttl: string | null;
+      tags: string | null;
     }>;
 
     return rows.map(row => ({
@@ -441,6 +459,8 @@ export class SQLiteStorageAdapter implements StorageAdapter {
       lastError: row.last_error,
       createdAt: row.created_at,
       nextRetryAt: row.next_retry_at,
+      ttl: row.ttl,
+      tags: row.tags,
     }));
   }
 

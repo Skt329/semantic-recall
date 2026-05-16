@@ -51,6 +51,8 @@ export interface NewJob {
   namespace: string;
   content: string;
   maxAttempts: number;
+  ttl?: string | number;
+  tags?: string[];
 }
 
 /**
@@ -76,6 +78,8 @@ export interface MemoryJob {
   lastError: string | null;
   createdAt: string;
   nextRetryAt: string | null;
+  ttl: string | null;
+  tags: string | null;
 }
 
 // ─── Versioned Storage Adapter Hierarchy ────────────────────────────────────
@@ -132,7 +136,7 @@ export interface AdapterStats {
 }
 
 /**
- * Current full storage adapter contract — all 23 methods required.
+ * Current full storage adapter contract — all 24 methods required.
  *
  * Extends StorageAdapterV1 with 7 new methods added in v1.1.0.
  * All methods are required — no optional markers.
@@ -411,15 +415,18 @@ export interface MemoryEventMap {
 // ─── Worker Messages ────────────────────────────────────────────────────────
 
 export interface WorkerInput {
+  id: number;
   text: string;
   modelName: string;
 }
 
 export interface WorkerSuccessOutput {
+  id: number;
   vector: number[];
 }
 
 export interface WorkerErrorOutput {
+  id: number;
   error: string;
 }
 

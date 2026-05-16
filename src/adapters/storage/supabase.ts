@@ -113,6 +113,8 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       lastError: (row['last_error'] as string) ?? null,
       createdAt: row['created_at'] as string,
       nextRetryAt: (row['next_retry_at'] as string) ?? null,
+      ttl: (row['ttl'] as string) ?? null,
+      tags: (row['tags'] as string) ?? null,
     };
   }
 
@@ -463,6 +465,8 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
           status: 'pending',
           max_attempts: job.maxAttempts,
           created_at: nowISO(),
+          ttl: job.ttl != null ? String(job.ttl) : null,
+          tags: job.tags ? JSON.stringify(job.tags) : null,
         })
         .select('id')
         .single() as { data?: { id: number }; error?: { message: string } };

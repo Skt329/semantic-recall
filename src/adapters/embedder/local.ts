@@ -4,9 +4,13 @@
  * Uses @huggingface/transformers (Transformers.js v3) with the
  * all-MiniLM-L6-v2 model (384 dimensions, ~25MB).
  *
- * Embedding runs in a dedicated worker_threads Worker to keep the
- * main thread free. The model is downloaded once on first use and
- * cached for subsequent calls.
+ * Embedding runs in a **persistent** worker_threads Worker to keep the
+ * main thread free. The worker is spawned once and reused for all
+ * embed calls — the model is loaded on the first message and kept in
+ * memory for the lifetime of the process.
+ *
+ * If the worker crashes, it is automatically respawned on the next
+ * embed call, and all pending requests receive rejection errors.
  *
  * This adapter requires zero API keys and zero internet after the
  * initial model download.
@@ -38,8 +42,89 @@ function resolveWorkerPath(): string {
   return workerPath;
 }
 
+// ─── Shared Worker Pool (module-level singleton) ──────────────────────────
+
+/** Auto-incrementing request ID for message correlation. */
+let nextRequestId = 0;
+
+/** Map of pending request ID → { resolve, reject } callbacks. */
+const pending = new Map<number, {
+  resolve: (vector: number[]) => void;
+  reject: (error: Error) => void;
+}>();
+
+/** The shared persistent worker instance. */
+let sharedWorker: Worker | null = null;
+
+/** Model name the current worker was spawned for. */
+let workerModelName: string | null = null;
+
 /**
- * Create a local embedder function that runs Transformers.js in a worker thread.
+ * Get or spawn the shared worker. If the worker has crashed or
+ * hasn't been created yet, spawn a new one.
+ */
+function getOrSpawnWorker(model: string): Worker {
+  if (sharedWorker && workerModelName === model) {
+    return sharedWorker;
+  }
+
+  // If model changed, terminate old worker
+  if (sharedWorker) {
+    sharedWorker.terminate().catch(() => {});
+    rejectAllPending('Worker terminated due to model change');
+  }
+
+  const workerPath = resolveWorkerPath();
+  const worker = new Worker(workerPath);
+
+  worker.on('message', (msg: WorkerOutput) => {
+    const entry = pending.get(msg.id);
+    if (!entry) return; // stale response from previous worker instance
+    pending.delete(msg.id);
+
+    if ('error' in msg) {
+      entry.reject(new Error(`Embedding worker error: ${msg.error}`));
+    } else {
+      entry.resolve(msg.vector);
+    }
+  });
+
+  worker.on('error', (err) => {
+    // Worker crashed — reject all pending and clear the instance
+    rejectAllPending(`Embedding worker crashed: ${err.message}`);
+    sharedWorker = null;
+    workerModelName = null;
+  });
+
+  worker.on('exit', (code) => {
+    if (code !== 0) {
+      rejectAllPending(`Embedding worker exited with code ${code}`);
+    }
+    sharedWorker = null;
+    workerModelName = null;
+  });
+
+  sharedWorker = worker;
+  workerModelName = model;
+  return worker;
+}
+
+/** Reject all pending requests (called on worker crash/exit). */
+function rejectAllPending(reason: string): void {
+  for (const [id, entry] of pending) {
+    entry.reject(new Error(reason));
+    pending.delete(id);
+  }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────
+
+/**
+ * Create a local embedder function that runs Transformers.js in a
+ * persistent worker thread.
+ *
+ * The worker is spawned lazily on the first embed call and reused for
+ * all subsequent calls. If the worker crashes, it is respawned automatically.
  *
  * @param modelName - HuggingFace model name. Default: 'Xenova/all-MiniLM-L6-v2'.
  * @returns An EmbedderFunction that embeds text into a number[] vector.
@@ -56,32 +141,12 @@ export function createLocalEmbedder(modelName?: string): EmbedderFunction {
   }
 
   return async (text: string): Promise<number[]> => {
+    const worker = getOrSpawnWorker(model);
+    const id = nextRequestId++;
+
     return new Promise<number[]>((resolve, reject) => {
-      const workerPath = resolveWorkerPath();
-
-      const worker = new Worker(workerPath, {
-        workerData: { text, modelName: model },
-      });
-
-      worker.on('message', (msg: WorkerOutput) => {
-        if ('error' in msg) {
-          reject(new Error(`Embedding worker error: ${msg.error}`));
-        } else {
-          resolve(msg.vector);
-        }
-        worker.terminate().catch(() => {});
-      });
-
-      worker.on('error', (err) => {
-        reject(new Error(`Embedding worker crashed: ${err.message}`));
-        worker.terminate().catch(() => {});
-      });
-
-      worker.on('exit', (code) => {
-        if (code !== 0 && code !== 1) {
-          reject(new Error(`Embedding worker exited with code ${code}`));
-        }
-      });
+      pending.set(id, { resolve, reject });
+      worker.postMessage({ id, text, modelName: model });
     });
   };
 }

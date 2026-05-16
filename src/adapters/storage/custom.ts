@@ -2,7 +2,7 @@
  * semantic-recall — Custom Storage Adapter Validation
  *
  * Runtime validation for user-provided storage adapter objects.
- * Ensures all 23 required methods are present at construction time
+ * Ensures all 24 required methods are present at construction time
  * rather than failing deep inside the memory pipeline.
  *
  * Developers are strongly encouraged to extend `BaseStorageAdapter`
@@ -13,7 +13,7 @@
 import type { StorageAdapter } from '../../types.js';
 
 /**
- * All 23 methods required by the StorageAdapter interface.
+ * All 24 methods required by the StorageAdapter interface.
  * Listed in logical groups for readability.
  */
 const REQUIRED_METHODS: (keyof StorageAdapter)[] = [
@@ -50,7 +50,7 @@ const REQUIRED_METHODS: (keyof StorageAdapter)[] = [
 
 /**
  * Validate that a user-provided storage adapter implements the full
- * StorageAdapter interface (all 23 methods).
+ * StorageAdapter interface (all 24 methods).
  *
  * @throws Error with a clear, actionable message listing missing methods
  *         and directing the developer to use BaseStorageAdapter.
@@ -67,7 +67,7 @@ export function validateCustomAdapter(
     throw new Error(
       `[semantic-recall] Custom storage adapter is missing ${missing.length} required method(s):\n` +
       `  ${missing.join(', ')}\n\n` +
-      `The StorageAdapter interface requires 23 methods. ` +
+      `The StorageAdapter interface requires 24 methods. ` +
       `For the best developer experience, extend BaseStorageAdapter ` +
       `instead of providing a raw object:\n\n` +
       `  import { BaseStorageAdapter } from 'semantic-recall'\n\n` +

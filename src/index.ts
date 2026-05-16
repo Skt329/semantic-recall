@@ -69,6 +69,7 @@ export class Memory extends EventEmitter {
   private retryTimer: ReturnType<typeof setInterval> | null = null;
   private initialized: boolean = false;
   private initPromise: Promise<void>;
+  private initError: Error | null = null;
 
   constructor(options: MemoryOptions) {
     super();
@@ -199,12 +200,15 @@ export class Memory extends EventEmitter {
       this.startRetryScheduler();
       this.initialized = true;
     } catch (err) {
+      this.initError = err instanceof Error ? err : new Error(String(err));
       console.error('[semantic-recall] Initialization error:', err);
     }
   }
 
   private async ensureInitialized(): Promise<void> {
+    if (this.initError) throw this.initError;
     if (!this.initialized) await this.initPromise;
+    if (this.initError) throw this.initError; // catch race where init just settled
   }
 
   // ─── Replay & Retry ───────────────────────────────────────────────────
@@ -250,6 +254,13 @@ export class Memory extends EventEmitter {
 
   // ─── Public API: remember() ───────────────────────────────────────────
 
+  /**
+   * Enqueue a text for background embedding and storage.
+   *
+   * **Note:** `remember()` is fire-and-forget and will silently swallow
+   * initialization errors. Use `rememberAndWait()` if you need to
+   * detect initialization failures.
+   */
   remember(text: string, options?: RememberOptions): void {
     void (async () => {
       try {
@@ -257,6 +268,7 @@ export class Memory extends EventEmitter {
         const namespace = options?.namespace ?? this.namespace;
         const jobId = await this.storage.enqueue({
           userId: this.userId, namespace, content: text, maxAttempts: this.maxAttempts,
+          ttl: this.resolveTtl(options), tags: options?.tags,
         });
         void injectBackground({
           jobId, userId: this.userId, namespace, content: text,
@@ -272,6 +284,7 @@ export class Memory extends EventEmitter {
     const namespace = options?.namespace ?? this.namespace;
     const jobId = await this.storage.enqueue({
       userId: this.userId, namespace, content: text, maxAttempts: this.maxAttempts,
+      ttl: this.resolveTtl(options), tags: options?.tags,
     });
     return injectBackground({
       jobId, userId: this.userId, namespace, content: text,
@@ -538,6 +551,15 @@ export class Memory extends EventEmitter {
 
   // ─── Public API: Auto-extraction ──────────────────────────────────────
 
+  /**
+   * Extract memorable facts from a conversation using an LLM,
+   * then enqueue each for background embedding.
+   *
+   * **Note:** Facts are enqueued asynchronously via `remember()`.
+   * When this method's Promise resolves, facts are queued but
+   * not yet embedded or stored. Listen for `memory:saved` events
+   * or call `recall()` after a short delay.
+   */
   async extractAndRemember(
     conversationHistory: ConversationMessage[],
     options?: RememberOptions,

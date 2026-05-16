@@ -47,7 +47,7 @@ export function createCustomEmbedder(fn: EmbedderFunction): EmbedderFunction {
     }
 
     for (let i = 0; i < result.length; i++) {
-      if (typeof result[i] !== 'number' || Number.isNaN(result[i])) {
+      if (typeof result[i] !== 'number' || !Number.isFinite(result[i])) {
         throw new Error(
           `[semantic-recall] Custom embedder returned invalid value at index ${i}: ${result[i]}. ` +
           'All elements must be finite numbers.'
