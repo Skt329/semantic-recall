@@ -87,8 +87,13 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
     };
   }
 
+  const ALLOWED_TABLES = new Set(['memories', 'pending_memories']);
+
   /** Safe column addition — no-op if column already exists. */
   async function migrateAddColumn(table: string, column: string, alterSql: string): Promise<void> {
+    if (!ALLOWED_TABLES.has(table)) {
+      throw new Error(`[semantic-recall] Unexpected table name: ${table}`);
+    }
     const db = await getClient();
     const result = await db.execute({ sql: `PRAGMA table_info(${table})`, args: [] });
     const columns = result.rows as unknown as Array<{ name: string }>;
@@ -324,6 +329,16 @@ export function createTursoAdapter(options: TursoAdapterOptions): StorageAdapter
       };
     },
 
+    /**
+     * Insert multiple memories sequentially.
+     *
+     * **Note:** Unlike the SQLite adapter, this is NOT wrapped in a transaction.
+     * Turso's `batch()` API does not return per-row insert IDs, so sequential
+     * execution is required to satisfy the `number[]` return type. If a network
+     * error occurs mid-batch, earlier inserts will persist (partial write).
+     *
+     * For atomic batch imports, use `Memory.import()` instead.
+     */
     async bulkInsertMemories(memories: InsertMemoryParams[]): Promise<number[]> {
       const db = await getClient();
       const ids: number[] = [];

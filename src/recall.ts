@@ -15,21 +15,8 @@ import type {
   RecallParams,
   MemoryResult,
 } from './types.js';
-import { cosineSimilarity, parseEmbedding } from './utils.js';
+import { cosineSimilarity, parseEmbedding, parseTags } from './utils.js';
 
-/**
- * Parse a JSON-serialized tags string from DB into a string array.
- * Gracefully handles null, undefined, empty, and malformed data.
- */
-function parseTags(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
-  } catch {
-    return [];
-  }
-}
 
 /**
  * Recall semantically similar memories for a query.

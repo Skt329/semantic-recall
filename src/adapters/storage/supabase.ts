@@ -350,6 +350,14 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
       return result.data ?? [];
     },
 
+    /**
+     * List distinct namespaces for a user.
+     *
+     * **Scalability note:** Supabase JS client does not support `DISTINCT`.
+     * This fetches all namespace values and deduplicates in JS. For users
+     * with large memory stores (>10,000 memories), consider creating an
+     * RPC function: `SELECT DISTINCT namespace FROM memories WHERE user_id = $1`
+     */
     async listNamespaces(userId: string): Promise<string[]> {
       const db = await getClient();
       // Supabase doesn't support DISTINCT directly, so we fetch and deduplicate
@@ -563,6 +571,9 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
         .eq('status', 'done')
         .lt('created_at', cutoff) as { count?: number | null };
 
+      // Note: COUNT and DELETE are separate queries. The returned count
+      // may not exactly match rows deleted if concurrent writes occur.
+      // This is acceptable — the value is informational, not transactional.
       const deleteCount = countResult.count ?? 0;
 
       if (deleteCount > 0) {

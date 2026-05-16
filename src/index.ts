@@ -24,7 +24,7 @@ import { createLocalEmbedder } from './adapters/embedder/local.js';
 import { createOpenAIEmbedder } from './adapters/embedder/openai.js';
 import { createCustomEmbedder } from './adapters/embedder/custom.js';
 import { validateCustomAdapter } from './adapters/storage/custom.js';
-import { parseTTL, parseEmbedding, cosineSimilarity, nowISO } from './utils.js';
+import { parseTTL, parseEmbedding, cosineSimilarity, nowISO, parseTags } from './utils.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -282,7 +282,10 @@ export class Memory extends EventEmitter {
 
   /**
    * Store multiple memories with partial-failure resilience.
-   * Uses Promise.allSettled — one failure does not abort the batch.
+   *
+   * Memories are processed **sequentially** so that intra-batch
+   * deduplication works correctly. For large batches (100+ items),
+   * consider chunking or using `import()` for pre-embedded data.
    */
   async rememberMany(
     texts: string[],
@@ -352,7 +355,7 @@ export class Memory extends EventEmitter {
     return rows.map(row => ({
       id: row.id, content: row.content, similarity: 1.0,
       createdAt: row.created_at, expiresAt: row.expires_at,
-      tags: row.tags ? (JSON.parse(row.tags) as string[]) : [],
+      tags: parseTags(row.tags),
       recallCount: row.recall_count ?? 0,
     }));
   }
@@ -411,7 +414,7 @@ export class Memory extends EventEmitter {
         scored.push({
           id: row.id, content: row.content, similarity,
           createdAt: row.created_at, expiresAt: row.expires_at,
-          tags: row.tags ? (JSON.parse(row.tags) as string[]) : [],
+          tags: parseTags(row.tags),
           recallCount: row.recall_count ?? 0,
         });
       }
@@ -438,6 +441,9 @@ export class Memory extends EventEmitter {
   /**
    * Export memories for this user as a portable JSON structure.
    * Optionally filter to a single namespace.
+   *
+   * **Note:** Namespace-scoped exports are capped at 5,000 memories.
+   * Full exports (no namespace filter) have no cap.
    */
   async export(options?: { namespace?: string }): Promise<ExportData> {
     await this.ensureInitialized();
@@ -459,7 +465,7 @@ export class Memory extends EventEmitter {
         embedding: parseEmbedding(row.embedding),
         createdAt: row.created_at,
         expiresAt: row.expires_at,
-        tags: row.tags ? (JSON.parse(row.tags) as string[]) : [],
+        tags: parseTags(row.tags),
       })),
     };
   }

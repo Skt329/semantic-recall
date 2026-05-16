@@ -36,7 +36,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
     magnitudeB += bi * bi;
   }
 
-  const magnitude = Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB);
+  const magnitude = Math.sqrt(magnitudeA * magnitudeB);
 
   // Guard against zero-magnitude vectors (all-zeros)
   if (magnitude === 0) {
@@ -152,4 +152,21 @@ export function computeBackoffMs(attempts: number): number {
  */
 export function nowISO(): string {
   return new Date().toISOString();
+}
+
+/**
+ * Parse a JSON-serialized tags string from DB into a string array.
+ * Gracefully handles null, undefined, empty, and malformed data.
+ *
+ * This is the single source of truth for tag parsing — used in
+ * recall, list, related, and export paths.
+ */
+export function parseTags(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : [];
+  } catch {
+    return [];
+  }
 }

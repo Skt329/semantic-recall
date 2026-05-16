@@ -16,7 +16,7 @@ import type {
   MemoryRetryEvent,
   MemoryDeadEvent,
 } from './types.js';
-import { isDuplicate, checkDimensionMismatch } from './dedup.js';
+import { checkAndDedup } from './dedup.js';
 import { generateExpiresAt, nowISO } from './utils.js';
 
 /**
@@ -57,16 +57,8 @@ export async function injectBackground(
     // Step 2: Embed the text
     const vector = await embedder(content);
 
-    // Step 3: Check dimension mismatch against existing memories
-    await checkDimensionMismatch({
-      vector,
-      userId,
-      namespace,
-      storage,
-    });
-
-    // Step 4: Deduplication check
-    const duplicate = await isDuplicate({
+    // Step 3+4: Single-pass dimension check + deduplication
+    const duplicate = await checkAndDedup({
       vector,
       userId,
       namespace,

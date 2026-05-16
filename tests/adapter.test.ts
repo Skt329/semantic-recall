@@ -109,6 +109,28 @@ describe('SQLiteStorageAdapter — New Methods', () => {
     db.close();
   });
 
+  it('incrementRecallCount handles >999 IDs without hitting SQLite variable limit', async () => {
+    const db = new SQLiteStorageAdapter(testDbPath('recall-count-large'));
+    await db.init();
+
+    // Insert 1500 memories
+    const ids: number[] = [];
+    for (let i = 0; i < 1500; i++) {
+      const id = await db.insertMemory(makeMemory({ content: `fact-${i}` }));
+      ids.push(id);
+    }
+
+    // This must not throw — the chunking at 999 prevents SQLITE_MAX_VARIABLE_NUMBER
+    await db.incrementRecallCount(ids);
+
+    // Verify at least first and last got incremented
+    const first = await db.getMemoryById(ids[0]!);
+    const last = await db.getMemoryById(ids[ids.length - 1]!);
+    expect(first!.recall_count).toBe(1);
+    expect(last!.recall_count).toBe(1);
+    db.close();
+  });
+
   it('getAllMemories returns all namespaces', async () => {
     const db = new SQLiteStorageAdapter(testDbPath('getall'));
     await db.init();

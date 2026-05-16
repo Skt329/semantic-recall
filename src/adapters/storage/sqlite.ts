@@ -78,6 +78,9 @@ const MIGRATION_ADD_RECALL_COUNT = `
 export class SQLiteStorageAdapter implements StorageAdapter {
   private db: Database.Database;
 
+  /** Only these tables are valid for PRAGMA table_info — prevents injection. */
+  private static readonly ALLOWED_TABLES = new Set(['memories', 'pending_memories']);
+
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
 
@@ -104,6 +107,9 @@ export class SQLiteStorageAdapter implements StorageAdapter {
 
   /** Safe column addition — no-op if column already exists. */
   private migrateAddColumn(table: string, column: string, sql: string): void {
+    if (!SQLiteStorageAdapter.ALLOWED_TABLES.has(table)) {
+      throw new Error(`[semantic-recall] Unexpected table name: ${table}`);
+    }
     const columns = this.db.pragma(`table_info(${table})`) as Array<{ name: string }>;
     const exists = columns.some(c => c.name === column);
     if (!exists) {
@@ -203,10 +209,14 @@ export class SQLiteStorageAdapter implements StorageAdapter {
   async incrementRecallCount(ids: number[]): Promise<void> {
     if (ids.length === 0) return;
 
-    const placeholders = ids.map(() => '?').join(',');
-    this.db.prepare(
-      `UPDATE memories SET recall_count = COALESCE(recall_count, 0) + 1 WHERE id IN (${placeholders})`
-    ).run(...ids);
+    // SQLite limits bind params to 999 (SQLITE_MAX_VARIABLE_NUMBER)
+    for (let i = 0; i < ids.length; i += 999) {
+      const chunk = ids.slice(i, i + 999);
+      const placeholders = chunk.map(() => '?').join(',');
+      this.db.prepare(
+        `UPDATE memories SET recall_count = COALESCE(recall_count, 0) + 1 WHERE id IN (${placeholders})`
+      ).run(...chunk);
+    }
   }
 
   async getAllMemories(userId: string): Promise<RawMemoryRow[]> {
