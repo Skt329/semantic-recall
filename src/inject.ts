@@ -129,11 +129,12 @@ export async function injectBackground(
 
       if (isDead) {
         // All retries exhausted — emit dead event
+        const deadJob = deadJobs.find(j => j.id === jobId);
         const deadEvent: MemoryDeadEvent = {
           jobId,
           content,
           error: errorMessage,
-          attempts: failedJob?.attempts ?? params.dedupThreshold, // fallback
+          attempts: deadJob?.attempts ?? failedJob?.attempts ?? 1,
         };
         emitter.emit('memory:dead', deadEvent);
       } else {

@@ -51,7 +51,6 @@ afterEach(() => {
   while (activeInstances.length > 0) {
     try { activeInstances.pop()!.destroy(); } catch {}
   }
-  try { if (fs.existsSync(TEST_DB_DIR)) fs.rmSync(TEST_DB_DIR, { recursive: true, force: true }); } catch {}
 });
 
 // ─── update() ───────────────────────────────────────────────────────────────

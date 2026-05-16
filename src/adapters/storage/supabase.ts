@@ -271,11 +271,13 @@ export function createSupabaseAdapter(options: SupabaseAdapterOptions): StorageA
 
     async listMemories(userId: string, namespace: string, limit: number): Promise<RawMemoryRow[]> {
       const db = await getClient();
+      const now = nowISO();
       const result = await db
         .from('memories')
         .select('id, user_id, namespace, content, embedding, created_at, expires_at, tags, recall_count')
         .eq('user_id', userId)
         .eq('namespace', namespace)
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
         .order('created_at', { ascending: false })
         .limit(limit) as { data?: RawMemoryRow[] };
 

@@ -42,7 +42,7 @@ beforeEach(() => {
   }
 });
 afterEach(() => {
-  try { if (fs.existsSync(TEST_DB_DIR)) fs.rmSync(TEST_DB_DIR, { recursive: true, force: true }); } catch {}
+  try { for (const f of fs.readdirSync(TEST_DB_DIR).filter(f => f.startsWith('adapter-'))) fs.unlinkSync(path.join(TEST_DB_DIR, f)); } catch {}
 });
 
 // ─── SQLite New Methods ─────────────────────────────────────────────────────
